@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Ship, MapPin, Calendar, Anchor, X, Upload, ImageIcon } from 'lucide-react';
+import { Ship, MapPin, Calendar, Anchor, X, Upload, ImageIcon, Plus, Trash2 } from 'lucide-react';
 
 // Major cruise ports database
 const CRUISE_PORTS = [
@@ -58,161 +58,8 @@ const CRUISE_PORTS = [
   "Lisbon, Portugal"
 ];
 
-// Multi-Select Ports Component with Autocomplete
-function PortsMultiSelect({ ports, onChange }) {
-  const [inputValue, setInputValue] = useState('');
-  const [suggestions, setSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [activeSuggestion, setActiveSuggestion] = useState(0);
-  const wrapperRef = useRef(null);
-
-  // Close suggestions when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event) {
-      if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
-        setShowSuggestions(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  const handleInputChange = (e) => {
-    const value = e.target.value;
-    setInputValue(value);
-
-    if (value.length > 0) {
-      const filtered = CRUISE_PORTS.filter(port =>
-        port.toLowerCase().includes(value.toLowerCase()) &&
-        !ports.includes(port)
-      ).slice(0, 5);
-      
-      setSuggestions(filtered);
-      setShowSuggestions(filtered.length > 0);
-      setActiveSuggestion(0);
-    } else {
-      setShowSuggestions(false);
-    }
-  };
-
-  const addPort = (port) => {
-    if (!ports.includes(port)) {
-      onChange([...ports, port]);
-    }
-    setInputValue('');
-    setSuggestions([]);
-    setShowSuggestions(false);
-  };
-
-  const removePort = (portToRemove) => {
-    onChange(ports.filter(port => port !== portToRemove));
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'ArrowDown' && activeSuggestion < suggestions.length - 1) {
-      setActiveSuggestion(activeSuggestion + 1);
-    } else if (e.key === 'ArrowUp' && activeSuggestion > 0) {
-      setActiveSuggestion(activeSuggestion - 1);
-    } else if (e.key === 'Enter' && showSuggestions && suggestions.length > 0) {
-      e.preventDefault();
-      addPort(suggestions[activeSuggestion]);
-    } else if (e.key === 'Escape') {
-      setShowSuggestions(false);
-    } else if (e.key === 'Backspace' && inputValue === '' && ports.length > 0) {
-      removePort(ports[ports.length - 1]);
-    }
-  };
-
-  return (
-    <div className="group" ref={wrapperRef}>
-      <div className="flex items-center gap-3 mb-2">
-        <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/20 transition-colors">
-          <MapPin className="w-5 h-5 text-emerald-400" />
-        </div>
-        <div>
-          <label htmlFor="ports-input" className="block text-base font-semibold text-slate-200">
-            Destinations
-          </label>
-          <p className="text-xs text-slate-500">Add each port you'll visit</p>
-        </div>
-      </div>
-
-      {ports.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-3 p-3 bg-slate-700/30 rounded-lg border border-slate-600/30">
-          {ports.map((port) => (
-            <div
-              key={port}
-              className="inline-flex items-center gap-2 bg-emerald-500/20 text-emerald-300 px-3 py-1.5 rounded-lg text-sm border border-emerald-500/30"
-            >
-              <MapPin className="w-3 h-3" />
-              <span>{port}</span>
-              <button
-                onClick={() => removePort(port)}
-                className="hover:text-emerald-100 transition-colors"
-                type="button"
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="relative">
-        <input
-          type="text"
-          id="ports-input"
-          value={inputValue}
-          onChange={handleInputChange}
-          onKeyDown={handleKeyDown}
-          className="w-full bg-slate-700/50 border border-slate-600/50 rounded-xl p-4 text-white text-lg placeholder-slate-500 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 focus:bg-slate-700 transition-all"
-          placeholder={ports.length === 0 ? "Start typing a port name..." : "Add another port..."}
-          autoComplete="off"
-        />
-
-        {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute z-50 w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-            {suggestions.map((suggestion, index) => (
-              <div
-                key={suggestion}
-                onClick={() => addPort(suggestion)}
-                className={`px-4 py-3 cursor-pointer transition-colors ${
-                  index === activeSuggestion
-                    ? 'bg-emerald-600/20 text-emerald-300'
-                    : 'text-slate-300 hover:bg-slate-700/50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-slate-500" />
-                  <span>{suggestion}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {ports.length === 0 && (
-        <p className="mt-2 text-xs text-slate-500 italic">
-          💡 Type to search from 50+ popular cruise ports
-        </p>
-      )}
-    </div>
-  );
-}
-
-// Autocomplete Input Component (for single fields like departure port)
-function AutocompleteInput({ 
-  label, 
-  sublabel, 
-  icon: Icon, 
-  iconColor,
-  name, 
-  value, 
-  onChange, 
-  placeholder,
-  id 
-}) {
+// Autocomplete for single port input
+function PortAutocomplete({ value, onChange, placeholder, id }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [activeSuggestion, setActiveSuggestion] = useState(0);
@@ -230,7 +77,7 @@ function AutocompleteInput({
 
   const handleChange = (e) => {
     const userInput = e.target.value;
-    onChange(e);
+    onChange(userInput);
 
     if (userInput.length > 0) {
       const filtered = CRUISE_PORTS.filter(port =>
@@ -246,7 +93,7 @@ function AutocompleteInput({
   };
 
   const handleSuggestionClick = (suggestion) => {
-    onChange({ target: { name, value: suggestion } });
+    onChange(suggestion);
     setSuggestions([]);
     setShowSuggestions(false);
   };
@@ -265,58 +112,96 @@ function AutocompleteInput({
   };
 
   return (
-    <div className="group" ref={wrapperRef}>
-      <div className="flex items-center gap-3 mb-2">
-        <div className={`flex items-center justify-center w-10 h-10 rounded-lg ${iconColor} transition-colors`}>
-          <Icon className="w-5 h-5" />
-        </div>
-        <div>
-          <label htmlFor={id} className="block text-base font-semibold text-slate-200">
-            {label}
-          </label>
-          <p className="text-xs text-slate-500">{sublabel}</p>
-        </div>
-      </div>
-      <div className="relative">
-        <input 
-          type="text" 
-          name={name} 
-          id={id} 
-          value={value} 
-          onChange={handleChange}
-          onKeyDown={handleKeyDown}
-          className="w-full bg-slate-700/50 border border-slate-600/50 rounded-xl p-4 text-white text-lg placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 focus:bg-slate-700 transition-all" 
-          placeholder={placeholder}
-          autoComplete="off"
-        />
-        
-        {showSuggestions && suggestions.length > 0 && (
-          <div className="absolute z-50 w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
-            {suggestions.map((suggestion, index) => (
-              <div
-                key={suggestion}
-                onClick={() => handleSuggestionClick(suggestion)}
-                className={`px-4 py-3 cursor-pointer transition-colors ${
-                  index === activeSuggestion 
-                    ? 'bg-blue-600/20 text-blue-300' 
-                    : 'text-slate-300 hover:bg-slate-700/50'
-                }`}
-              >
-                <div className="flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-slate-500" />
-                  <span>{suggestion}</span>
-                </div>
+    <div className="relative" ref={wrapperRef}>
+      <input 
+        type="text" 
+        id={id} 
+        value={value} 
+        onChange={handleChange}
+        onKeyDown={handleKeyDown}
+        className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all" 
+        placeholder={placeholder}
+        autoComplete="off"
+      />
+      
+      {showSuggestions && suggestions.length > 0 && (
+        <div className="absolute z-50 w-full mt-2 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl overflow-hidden">
+          {suggestions.map((suggestion, index) => (
+            <div
+              key={suggestion}
+              onClick={() => handleSuggestionClick(suggestion)}
+              className={`px-4 py-3 cursor-pointer transition-colors ${
+                index === activeSuggestion 
+                  ? 'bg-blue-600/20 text-blue-300' 
+                  : 'text-slate-300 hover:bg-slate-700/50'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <MapPin className="w-4 h-4 text-slate-500" />
+                <span>{suggestion}</span>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
 
-// Enhanced Cruise Setup Component
+// Enhanced Cruise Setup Component with Date-Based Itinerary
 function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
+  const [itinerary, setItinerary] = useState([]);
+
+  const handleBasicChange = (field, value) => {
+    onDetailsChange({ [field]: value });
+  };
+
+  const generateItinerary = () => {
+    if (!cruiseDetails.departureDate || !cruiseDetails.returnDate) {
+      alert('Please enter departure and return dates');
+      return;
+    }
+
+    const start = new Date(cruiseDetails.departureDate);
+    const end = new Date(cruiseDetails.returnDate);
+    const days = [];
+    
+    let current = new Date(start);
+    let dayNum = 0;
+
+    while (current <= end) {
+      const dateStr = current.toISOString().split('T')[0];
+      const isFirst = dayNum === 0;
+      const isLast = current.getTime() === end.getTime();
+      
+      days.push({
+        date: dateStr,
+        type: isFirst ? 'embarkation' : (isLast ? 'disembarkation' : 'sea'),
+        port: isFirst || isLast ? cruiseDetails.homePort : ''
+      });
+      
+      current.setDate(current.getDate() + 1);
+      dayNum++;
+    }
+
+    setItinerary(days);
+  };
+
+  const updateItineraryDay = (index, field, value) => {
+    const updated = [...itinerary];
+    updated[index][field] = value;
+    setItinerary(updated);
+  };
+
+  const handleSaveItinerary = () => {
+    if (itinerary.length === 0) {
+      alert('Please generate itinerary first');
+      return;
+    }
+    onDetailsChange({ itinerary });
+    onSave();
+  };
+
   return (
     <div className="relative">
       <div className="absolute -top-20 -left-20 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl"></div>
@@ -329,73 +214,124 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
             <Ship className="w-8 h-8 text-white" />
           </div>
           <h2 className="text-3xl font-bold bg-gradient-to-r from-blue-400 to-cyan-400 bg-clip-text text-transparent">
-            Set Sail on Your Journey
+            Set Up Your Cruise
           </h2>
-          <p className="text-slate-400 text-lg">Let's capture every moment of your cruise adventure</p>
+          <p className="text-slate-400 text-lg">Let&apos;s build your cruise itinerary</p>
         </div>
         
         <div className="space-y-6">
           
-          <div className="group">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="flex items-center justify-center w-10 h-10 rounded-lg bg-blue-500/10 group-hover:bg-blue-500/20 transition-colors">
-                <Calendar className="w-5 h-5 text-blue-400" />
-              </div>
-              <div>
-                <label htmlFor="days" className="block text-base font-semibold text-slate-200">
-                  Cruise Duration
-                </label>
-                <p className="text-xs text-slate-500">How many days will you be sailing?</p>
-              </div>
-            </div>
-            <input 
-              type="number" 
-              name="days" 
-              id="days" 
-              min="1"
-              max="30"
-              value={cruiseDetails.days} 
-              onChange={onDetailsChange} 
-              className="w-full bg-slate-700/50 border border-slate-600/50 rounded-xl p-4 text-white text-lg font-medium placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 focus:bg-slate-700 transition-all" 
-              placeholder="7"
+          {/* Home Port */}
+          <div>
+            <label htmlFor="homePort" className="block text-sm font-semibold text-slate-300 mb-2">
+              🏠 Home Port (Departure & Return)
+            </label>
+            <PortAutocomplete
+              id="homePort"
+              value={cruiseDetails.homePort || ''}
+              onChange={(val) => handleBasicChange('homePort', val)}
+              placeholder="e.g., Galveston, Texas"
             />
           </div>
 
-          <AutocompleteInput
-            label="Home Port"
-            sublabel="Where does your journey begin?"
-            icon={Anchor}
-            iconColor="bg-cyan-500/10 group-hover:bg-cyan-500/20"
-            name="departurePort"
-            id="departurePort"
-            value={cruiseDetails.departurePort}
-            onChange={onDetailsChange}
-            placeholder="Start typing... (e.g., Galveston)"
-          />
+          {/* Departure Date */}
+          <div>
+            <label htmlFor="departureDate" className="block text-sm font-semibold text-slate-300 mb-2">
+              📅 Departure Date
+            </label>
+            <input
+              type="date"
+              id="departureDate"
+              value={cruiseDetails.departureDate || ''}
+              onChange={(e) => handleBasicChange('departureDate', e.target.value)}
+              className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+            />
+          </div>
 
-          <PortsMultiSelect
-            ports={cruiseDetails.portsArray || []}
-            onChange={(newPorts) => {
-              onDetailsChange({ 
-                target: { 
-                  name: 'portsArray', 
-                  value: newPorts 
-                } 
-              });
-            }}
-          />
+          {/* Return Date */}
+          <div>
+            <label htmlFor="returnDate" className="block text-sm font-semibold text-slate-300 mb-2">
+              📅 Return Date
+            </label>
+            <input
+              type="date"
+              id="returnDate"
+              value={cruiseDetails.returnDate || ''}
+              onChange={(e) => handleBasicChange('returnDate', e.target.value)}
+              className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+            />
+          </div>
+
+          {/* Generate Itinerary Button */}
+          <button
+            onClick={generateItinerary}
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors"
+          >
+            Generate Itinerary
+          </button>
+
+          {/* Itinerary Builder */}
+          {itinerary.length > 0 && (
+            <div className="space-y-4 pt-6 border-t border-slate-700">
+              <h3 className="text-xl font-bold text-white">Your Itinerary</h3>
+              {itinerary.map((day, index) => (
+                <div key={day.date} className="bg-slate-700/30 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-white font-medium">
+                      {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { 
+                        weekday: 'long', 
+                        month: 'long', 
+                        day: 'numeric' 
+                      })}
+                    </span>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-slate-400 mb-1">Type</label>
+                      <select
+                        value={day.type}
+                        onChange={(e) => updateItineraryDay(index, 'type', e.target.value)}
+                        className="w-full bg-slate-600/50 border border-slate-500/50 rounded p-2 text-white text-sm"
+                      >
+                        <option value="embarkation">Embarkation</option>
+                        <option value="sea">At Sea</option>
+                        <option value="port">Port Day</option>
+                        <option value="disembarkation">Disembarkation</option>
+                      </select>
+                    </div>
+                    
+                    {(day.type === 'port' || day.type === 'embarkation' || day.type === 'disembarkation') && (
+                      <div>
+                        <label className="block text-xs text-slate-400 mb-1">
+                          {day.type === 'port' ? 'Port Name' : 'Home Port'}
+                        </label>
+                        <PortAutocomplete
+                          value={day.port}
+                          onChange={(val) => updateItineraryDay(index, 'port', val)}
+                          placeholder="Port name"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         
-        <button 
-          onClick={onSave} 
-          className="group relative w-full overflow-hidden bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-700 hover:via-blue-600 hover:to-cyan-600 text-white font-bold py-4 px-6 rounded-xl text-lg shadow-xl shadow-blue-500/25 transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
-        >
-          <span className="relative z-10 flex items-center justify-center gap-2">
-            Begin Your Journal
-            <Ship className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </span>
-          <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
-        </button>
+        {itinerary.length > 0 && (
+          <button 
+            onClick={handleSaveItinerary} 
+            className="group relative w-full overflow-hidden bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-700 hover:via-blue-600 hover:to-cyan-600 text-white font-bold py-4 px-6 rounded-xl text-lg shadow-xl shadow-blue-500/25 transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+          >
+            <span className="relative z-10 flex items-center justify-center gap-2">
+              Begin Your Journal
+              <Ship className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+            </span>
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700"></div>
+          </button>
+        )}
         
         <div className="pt-4 border-t border-slate-700/50">
           <p className="text-center text-xs text-slate-500">
@@ -409,20 +345,11 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
 
 // Daily Journal Component
 function DailyJournal({ cruiseDetails }) {
-  const [currentEntry, setCurrentEntry] = useState({
-    day: 1,
-    location: 'At Sea',
-    weather: '',
-    activities: [], // Changed to array of activity objects
-    exceptionalFood: '',
-    summary: '',
-    photos: []
-  });
-
+  const [selectedDate, setSelectedDate] = useState(cruiseDetails.itinerary[0]?.date || '');
+  const [entries, setEntries] = useState({});
   const [savedEntries, setSavedEntries] = useState([]);
   const [showSuccessMessage, setShowSuccessMessage] = useState(false);
 
-  // Load saved entries from localStorage on mount
   useEffect(() => {
     const stored = localStorage.getItem('cruiseJournalEntries');
     if (stored) {
@@ -430,18 +357,25 @@ function DailyJournal({ cruiseDetails }) {
     }
   }, []);
 
-  // Generate day options based on cruise duration
-  const dayOptions = Array.from({ length: cruiseDetails.days }, (_, i) => i + 1);
-  
-  // Generate location options: "At Sea" + all ports
-  const locationOptions = ['At Sea', ...cruiseDetails.portsArray];
-
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setCurrentEntry(prev => ({ ...prev, [name]: value }));
+  const currentDay = cruiseDetails.itinerary.find(day => day.date === selectedDate);
+  const currentEntry = entries[selectedDate] || {
+    weather: '',
+    activities: [],
+    exceptionalFood: '',
+    summary: '',
+    photos: []
   };
 
-  // Add a new activity block
+  const updateEntry = (field, value) => {
+    setEntries(prev => ({
+      ...prev,
+      [selectedDate]: {
+        ...prev[selectedDate],
+        [field]: value
+      }
+    }));
+  };
+
   const addActivity = () => {
     const newActivity = {
       id: Date.now(),
@@ -449,36 +383,24 @@ function DailyJournal({ cruiseDetails }) {
       description: '',
       photos: []
     };
-    setCurrentEntry(prev => ({
-      ...prev,
-      activities: [...prev.activities, newActivity]
-    }));
+    updateEntry('activities', [...(currentEntry.activities || []), newActivity]);
   };
 
-  // Update an activity
   const updateActivity = (id, field, value) => {
-    setCurrentEntry(prev => ({
-      ...prev,
-      activities: prev.activities.map(activity =>
-        activity.id === id ? { ...activity, [field]: value } : activity
-      )
-    }));
+    const updated = currentEntry.activities.map(activity =>
+      activity.id === id ? { ...activity, [field]: value } : activity
+    );
+    updateEntry('activities', updated);
   };
 
-  // Delete an activity
   const deleteActivity = (id) => {
-    setCurrentEntry(prev => ({
-      ...prev,
-      activities: prev.activities.filter(activity => activity.id !== id)
-    }));
+    updateEntry('activities', currentEntry.activities.filter(a => a.id !== id));
   };
 
-  // Handle photo upload for activities
   const handleActivityPhotoUpload = (activityId, e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
-    // Create photo objects with preview URLs
     const newPhotos = files.map(file => ({
       id: Date.now() + Math.random(),
       file: file,
@@ -486,49 +408,40 @@ function DailyJournal({ cruiseDetails }) {
       caption: ''
     }));
 
-    setCurrentEntry(prev => ({
-      ...prev,
-      activities: prev.activities.map(activity =>
-        activity.id === activityId
-          ? { ...activity, photos: [...activity.photos, ...newPhotos] }
-          : activity
-      )
-    }));
+    const updated = currentEntry.activities.map(activity =>
+      activity.id === activityId
+        ? { ...activity, photos: [...activity.photos, ...newPhotos] }
+        : activity
+    );
+    updateEntry('activities', updated);
   };
 
-  // Update photo caption for activity
   const updateActivityPhotoCaption = (activityId, photoId, caption) => {
-    setCurrentEntry(prev => ({
-      ...prev,
-      activities: prev.activities.map(activity =>
-        activity.id === activityId
-          ? {
-              ...activity,
-              photos: activity.photos.map(photo =>
-                photo.id === photoId ? { ...photo, caption } : photo
-              )
-            }
-          : activity
-      )
-    }));
+    const updated = currentEntry.activities.map(activity =>
+      activity.id === activityId
+        ? {
+            ...activity,
+            photos: activity.photos.map(photo =>
+              photo.id === photoId ? { ...photo, caption } : photo
+            )
+          }
+        : activity
+    );
+    updateEntry('activities', updated);
   };
 
-  // Delete photo from activity
   const deleteActivityPhoto = (activityId, photoId) => {
-    setCurrentEntry(prev => ({
-      ...prev,
-      activities: prev.activities.map(activity =>
-        activity.id === activityId
-          ? {
-              ...activity,
-              photos: activity.photos.filter(photo => photo.id !== photoId)
-            }
-          : activity
-      )
-    }));
+    const updated = currentEntry.activities.map(activity =>
+      activity.id === activityId
+        ? {
+            ...activity,
+            photos: activity.photos.filter(photo => photo.id !== photoId)
+          }
+        : activity
+    );
+    updateEntry('activities', updated);
   };
 
-  // Handle general photo upload
   const handleGeneralPhotoUpload = (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
@@ -540,97 +453,45 @@ function DailyJournal({ cruiseDetails }) {
       caption: ''
     }));
 
-    setCurrentEntry(prev => ({
-      ...prev,
-      photos: [...prev.photos, ...newPhotos]
-    }));
+    updateEntry('photos', [...(currentEntry.photos || []), ...newPhotos]);
   };
 
-  // Update general photo caption
   const updateGeneralPhotoCaption = (photoId, caption) => {
-    setCurrentEntry(prev => ({
-      ...prev,
-      photos: prev.photos.map(photo =>
-        photo.id === photoId ? { ...photo, caption } : photo
-      )
-    }));
+    const updated = currentEntry.photos.map(photo =>
+      photo.id === photoId ? { ...photo, caption } : photo
+    );
+    updateEntry('photos', updated);
   };
 
-  // Delete general photo
   const deleteGeneralPhoto = (photoId) => {
-    setCurrentEntry(prev => ({
-      ...prev,
-      photos: prev.photos.filter(photo => photo.id !== photoId)
-    }));
+    updateEntry('photos', currentEntry.photos.filter(photo => photo.id !== photoId));
   };
 
-  // Save entry to localStorage
   const saveEntry = () => {
-    // Convert photo previews to base64 for storage
     const entryToSave = {
       ...currentEntry,
+      date: selectedDate,
+      dayInfo: currentDay,
       id: Date.now(),
       savedAt: new Date().toISOString(),
-      activities: currentEntry.activities.map(activity => ({
-        ...activity,
-        photos: activity.photos.map(photo => ({
-          id: photo.id,
-          caption: photo.caption,
-          preview: photo.preview // Keep the preview URL
-        }))
-      })),
-      photos: currentEntry.photos.map(photo => ({
-        id: photo.id,
-        caption: photo.caption,
-        preview: photo.preview
-      }))
     };
 
     const updatedEntries = [...savedEntries, entryToSave];
     setSavedEntries(updatedEntries);
     localStorage.setItem('cruiseJournalEntries', JSON.stringify(updatedEntries));
 
-    // Show success message
     setShowSuccessMessage(true);
     setTimeout(() => setShowSuccessMessage(false), 3000);
 
-    // Reset form for next entry
-    setCurrentEntry({
-      day: currentEntry.day + 1 <= cruiseDetails.days ? currentEntry.day + 1 : 1,
-      location: 'At Sea',
-      weather: '',
-      activities: [],
-      exceptionalFood: '',
-      summary: '',
-      photos: []
-    });
-  };
-
-  // Load an existing entry
-  const loadEntry = (entry) => {
-    setCurrentEntry({
-      day: entry.day,
-      location: entry.location,
-      weather: entry.weather,
-      activities: entry.activities,
-      exceptionalFood: entry.exceptionalFood,
-      summary: entry.summary,
-      photos: entry.photos
-    });
-    // Scroll to top
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  };
-
-  // Delete a saved entry
-  const deleteEntry = (entryId) => {
-    const updatedEntries = savedEntries.filter(entry => entry.id !== entryId);
-    setSavedEntries(updatedEntries);
-    localStorage.setItem('cruiseJournalEntries', JSON.stringify(updatedEntries));
+    // Move to next day if available
+    const currentIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
+    if (currentIndex < cruiseDetails.itinerary.length - 1) {
+      setSelectedDate(cruiseDetails.itinerary[currentIndex + 1].date);
+    }
   };
 
   return (
     <div className="space-y-6">
-      {/* Success Message */}
       {showSuccessMessage && (
         <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 animate-slide-in">
           <span className="text-xl">✓</span>
@@ -638,63 +499,43 @@ function DailyJournal({ cruiseDetails }) {
         </div>
       )}
 
-      {/* Header */}
       <div className="text-center space-y-2">
         <div className="inline-flex items-center justify-center w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500">
           <Calendar className="w-6 h-6 text-white" />
         </div>
         <h2 className="text-3xl font-bold text-white">Daily Journal Entry</h2>
-        <p className="text-slate-400">Capture today's memories</p>
+        <p className="text-slate-400">Capture today&apos;s memories</p>
       </div>
 
-      {/* Main Form */}
       <div className="rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 border border-slate-700/50 shadow-2xl space-y-6">
         
-        {/* Smart Dropdowns Section */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          
-          {/* Day Selector */}
-          <div>
-            <label htmlFor="day" className="block text-sm font-semibold text-slate-300 mb-2">
-              📅 Day of Cruise
-            </label>
-            <select
-              name="day"
-              id="day"
-              value={currentEntry.day}
-              onChange={handleInputChange}
-              className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
-            >
-              {dayOptions.map(day => (
-                <option key={day} value={day}>
-                  Day {day} of {cruiseDetails.days}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* Location Selector */}
-          <div>
-            <label htmlFor="location" className="block text-sm font-semibold text-slate-300 mb-2">
-              📍 Location
-            </label>
-            <select
-              name="location"
-              id="location"
-              value={currentEntry.location}
-              onChange={handleInputChange}
-              className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white focus:ring-2 focus:ring-cyan-500/50 focus:border-cyan-500/50 transition-all"
-            >
-              {locationOptions.map(location => (
-                <option key={location} value={location}>
-                  {location}
-                </option>
-              ))}
-            </select>
-          </div>
+        {/* Date Selector */}
+        <div>
+          <label htmlFor="date" className="block text-sm font-semibold text-slate-300 mb-2">
+            📅 Select Day
+          </label>
+          <select
+            name="date"
+            id="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+          >
+            {cruiseDetails.itinerary.map((day) => (
+              <option key={day.date} value={day.date}>
+                {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { 
+                  weekday: 'long', 
+                  month: 'long', 
+                  day: 'numeric' 
+                })} - {day.type === 'embarkation' ? `Embarkation (${day.port})` : 
+                       day.type === 'disembarkation' ? `Disembarkation (${day.port})` :
+                       day.type === 'port' ? day.port : 'At Sea'}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* Weather Input */}
+        {/* Weather */}
         <div>
           <label htmlFor="weather" className="block text-sm font-semibold text-slate-300 mb-2">
             ☀️ Weather
@@ -703,14 +544,14 @@ function DailyJournal({ cruiseDetails }) {
             type="text"
             name="weather"
             id="weather"
-            value={currentEntry.weather}
-            onChange={handleInputChange}
+            value={currentEntry.weather || ''}
+            onChange={(e) => updateEntry('weather', e.target.value)}
             placeholder="e.g., Sunny, 85°F"
             className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/50 transition-all"
           />
         </div>
 
-        {/* Activities Section - New Expandable Blocks */}
+        {/* Activities */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <label className="block text-sm font-semibold text-slate-300">
@@ -720,13 +561,13 @@ function DailyJournal({ cruiseDetails }) {
               onClick={addActivity}
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
             >
-              <span className="text-lg">+</span> Add Activity
+              <Plus className="w-4 h-4" /> Add Activity
             </button>
           </div>
 
-          {currentEntry.activities.length === 0 ? (
+          {(!currentEntry.activities || currentEntry.activities.length === 0) ? (
             <div className="text-center py-8 text-slate-500 italic border-2 border-dashed border-slate-700 rounded-lg">
-              No activities yet. Click "Add Activity" to start!
+              No activities yet. Click &quot;Add Activity&quot; to start!
             </div>
           ) : (
             <div className="space-y-4">
@@ -735,34 +576,30 @@ function DailyJournal({ cruiseDetails }) {
                   key={activity.id}
                   className="bg-slate-700/30 border border-slate-600/50 rounded-xl p-5 space-y-3"
                 >
-                  {/* Activity Title */}
                   <div className="flex items-center gap-3">
                     <input
                       type="text"
                       value={activity.title}
                       onChange={(e) => updateActivity(activity.id, 'title', e.target.value)}
-                      placeholder="Activity name (e.g., Team Volleyball, Snorkeling)"
+                      placeholder="Activity name (e.g., Team Volleyball)"
                       className="flex-1 bg-slate-600/50 border border-slate-500/50 rounded-lg p-2 text-white placeholder-slate-400 font-medium focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all"
                     />
                     <button
                       onClick={() => deleteActivity(activity.id)}
                       className="text-red-400 hover:text-red-300 hover:bg-red-500/10 p-2 rounded-lg transition-all"
-                      title="Delete activity"
                     >
-                      <span className="text-xl">×</span>
+                      <Trash2 className="w-5 h-5" />
                     </button>
                   </div>
 
-                  {/* Activity Description */}
                   <textarea
                     value={activity.description}
                     onChange={(e) => updateActivity(activity.id, 'description', e.target.value)}
                     rows="3"
-                    placeholder="Describe this activity... What happened? What made it memorable?"
+                    placeholder="Describe this activity..."
                     className="w-full bg-slate-600/50 border border-slate-500/50 rounded-lg p-3 text-white placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all resize-none"
                   />
 
-                  {/* Photo Upload Placeholder for Activity */}
                   <div className="pt-2 border-t border-slate-600/30 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-slate-400">📸 Photos for this activity</span>
@@ -779,8 +616,7 @@ function DailyJournal({ cruiseDetails }) {
                       </label>
                     </div>
 
-                    {/* Photo Grid */}
-                    {activity.photos.length > 0 && (
+                    {activity.photos && activity.photos.length > 0 && (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {activity.photos.map((photo) => (
                           <div key={photo.id} className="relative group">
@@ -821,10 +657,10 @@ function DailyJournal({ cruiseDetails }) {
           <textarea
             name="exceptionalFood"
             id="exceptionalFood"
-            value={currentEntry.exceptionalFood}
-            onChange={handleInputChange}
+            value={currentEntry.exceptionalFood || ''}
+            onChange={(e) => updateEntry('exceptionalFood', e.target.value)}
             rows="3"
-            placeholder="Memorable meals or dishes (e.g., Lobster at specialty restaurant, fresh conch fritters)"
+            placeholder="Memorable meals or dishes..."
             className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 transition-all resize-none"
           />
         </div>
@@ -837,15 +673,15 @@ function DailyJournal({ cruiseDetails }) {
           <textarea
             name="summary"
             id="summary"
-            value={currentEntry.summary}
-            onChange={handleInputChange}
+            value={currentEntry.summary || ''}
+            onChange={(e) => updateEntry('summary', e.target.value)}
             rows="5"
-            placeholder="Write your thoughts, favorite moments, or anything memorable about today..."
+            placeholder="Write your thoughts, favorite moments..."
             className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all resize-none"
           />
         </div>
 
-        {/* General Photo Upload Section */}
+        {/* General Photos */}
         <div className="pt-4 border-t border-slate-700/50 space-y-3">
           <div className="flex items-center justify-between">
             <label className="block text-sm font-semibold text-slate-300">
@@ -864,12 +700,12 @@ function DailyJournal({ cruiseDetails }) {
             </label>
           </div>
           
-          <p className="text-xs text-slate-500">
-            Upload any other photos from today that don't belong to a specific activity
-          </p>
-
-          {/* General Photos Grid */}
-          {currentEntry.photos.length > 0 ? (
+          {(!currentEntry.photos || currentEntry.photos.length === 0) ? (
+            <div className="text-center py-8 text-slate-500 italic border-2 border-dashed border-slate-700 rounded-lg flex flex-col items-center gap-2">
+              <ImageIcon className="w-8 h-8 text-slate-600" />
+              <span>No photos yet</span>
+            </div>
+          ) : (
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {currentEntry.photos.map((photo) => (
                 <div key={photo.id} className="relative group">
@@ -894,15 +730,9 @@ function DailyJournal({ cruiseDetails }) {
                 </div>
               ))}
             </div>
-          ) : (
-            <div className="text-center py-8 text-slate-500 italic border-2 border-dashed border-slate-700 rounded-lg flex flex-col items-center gap-2">
-              <ImageIcon className="w-8 h-8 text-slate-600" />
-              <span>No photos yet. Click "Upload Photos" to add some!</span>
-            </div>
           )}
         </div>
 
-        {/* Save Button */}
         <button
           onClick={saveEntry}
           className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
@@ -911,7 +741,6 @@ function DailyJournal({ cruiseDetails }) {
         </button>
       </div>
 
-      {/* Saved Entries Section */}
       {savedEntries.length > 0 && (
         <div className="rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 border border-slate-700/50 shadow-2xl">
           <h3 className="text-2xl font-bold text-white mb-4">Saved Entries ({savedEntries.length})</h3>
@@ -919,34 +748,19 @@ function DailyJournal({ cruiseDetails }) {
             {savedEntries.map((entry) => (
               <div
                 key={entry.id}
-                className="bg-slate-700/30 border border-slate-600/50 rounded-lg p-4 flex items-center justify-between hover:bg-slate-700/50 transition-colors"
+                className="bg-slate-700/30 border border-slate-600/50 rounded-lg p-4"
               >
-                <div className="flex-1">
-                  <div className="flex items-center gap-3 mb-1">
-                    <span className="text-white font-semibold">
-                      Day {entry.day} - {entry.location}
-                    </span>
-                    {entry.weather && (
-                      <span className="text-slate-400 text-sm">☀️ {entry.weather}</span>
-                    )}
-                  </div>
-                  <div className="text-slate-400 text-sm">
-                    {entry.activities.length} activities • {entry.photos.length} general photos
-                  </div>
+                <div className="text-white font-semibold">
+                  {new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', { 
+                    weekday: 'long', 
+                    month: 'long', 
+                    day: 'numeric' 
+                  })}
                 </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => loadEntry(entry)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-                  >
-                    Edit
-                  </button>
-                  <button
-                    onClick={() => deleteEntry(entry.id)}
-                    className="bg-red-600/80 hover:bg-red-600 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-                  >
-                    Delete
-                  </button>
+                <div className="text-slate-400 text-sm">
+                  {entry.dayInfo?.type === 'port' ? entry.dayInfo.port : 
+                   entry.dayInfo?.type === 'embarkation' ? 'Embarkation' :
+                   entry.dayInfo?.type === 'disembarkation' ? 'Disembarkation' : 'At Sea'}
                 </div>
               </div>
             ))}
@@ -962,14 +776,14 @@ export default function HomePage() {
   const [appState, setAppState] = useState('setup'); 
   
   const [cruiseDetails, setCruiseDetails] = useState({
-    days: 7,
-    departurePort: '',
-    portsArray: [],
+    homePort: '',
+    departureDate: '',
+    returnDate: '',
+    itinerary: [],
   });
 
-  const handleDetailsChange = (e) => {
-    const { name, value } = e.target;
-    setCruiseDetails(prev => ({ ...prev, [name]: value }));
+  const handleDetailsChange = (updates) => {
+    setCruiseDetails(prev => ({ ...prev, ...updates }));
   };
 
   const handleSaveSetup = () => {
