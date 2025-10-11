@@ -151,6 +151,38 @@ function PortAutocomplete({ value, onChange, placeholder, id }) {
 // Enhanced Cruise Setup Component with Date-Based Itinerary
 function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
   const [itinerary, setItinerary] = useState([]);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallPrompt, setShowInstallPrompt] = useState(false);
+
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setShowInstallPrompt(true);
+    };
+
+    window.addEventListener('beforeinstallprompt', handler);
+
+    // Check if already installed
+    if (window.matchMedia('(display-mode: standalone)').matches) {
+      setShowInstallPrompt(false);
+    }
+
+    return () => window.removeEventListener('beforeinstallprompt', handler);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!deferredPrompt) return;
+
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    
+    if (outcome === 'accepted') {
+      setShowInstallPrompt(false);
+    }
+    
+    setDeferredPrompt(null);
+  };
 
   const handleBasicChange = (field, value) => {
     onDetailsChange({ [field]: value });
@@ -206,6 +238,40 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
     <div className="relative">
       <div className="absolute -top-20 -left-20 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl"></div>
       <div className="absolute -bottom-20 -right-20 w-40 h-40 bg-cyan-500/20 rounded-full blur-3xl"></div>
+      
+      {/* Install App Banner */}
+      {showInstallPrompt && (
+        <div className="mb-6 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 p-6 border-2 border-blue-400 shadow-2xl animate-slide-down">
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0">
+              <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
+                <Ship className="w-6 h-6 text-white" />
+              </div>
+            </div>
+            <div className="flex-1">
+              <h3 className="text-xl font-bold text-white mb-2">
+                📱 Works Offline at Sea!
+              </h3>
+              <p className="text-white/90 mb-4">
+                Our app works on your phone, even when offline. Download it now while you have internet access. Once installed, you can journal anywhere—even in the middle of the ocean!
+              </p>
+              <button
+                onClick={handleInstallClick}
+                className="bg-white hover:bg-blue-50 text-blue-600 font-bold py-3 px-6 rounded-lg shadow-lg transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
+              >
+                <Ship className="w-5 h-5" />
+                Install App Now
+              </button>
+            </div>
+            <button
+              onClick={() => setShowInstallPrompt(false)}
+              className="flex-shrink-0 text-white/70 hover:text-white transition-colors"
+            >
+              <X className="w-6 h-6" />
+            </button>
+          </div>
+        </div>
+      )}
       
       <div className="relative space-y-8 rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 backdrop-blur-sm p-10 border border-slate-700/50 shadow-2xl">
         
@@ -791,14 +857,14 @@ export default function HomePage() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-x-hidden">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
       </div>
       
-      <div className="relative z-10 flex flex-col items-center justify-start p-6 sm:p-8 md:p-12">
-        <div className="w-full max-w-3xl">
+      <div className="relative z-10 flex flex-col items-center justify-start p-6 sm:p-8 md:p-12 overflow-x-hidden">
+        <div className="w-full max-w-3xl overflow-x-hidden">
           
           <div className="text-center mb-12 space-y-2">
             <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">
@@ -841,6 +907,19 @@ export default function HomePage() {
         }
         .animate-slide-in {
           animation: slide-in 0.3s ease-out;
+        }
+        @keyframes slide-down {
+          from {
+            transform: translateY(-20px);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+        .animate-slide-down {
+          animation: slide-down 0.5s ease-out;
         }
       `}</style>
     </main>
