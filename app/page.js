@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Ship, MapPin, Calendar, Anchor, X, Upload, ImageIcon, Plus, Trash2 } from 'lucide-react';
+import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2 } from 'lucide-react';
 
 // Major cruise ports database
 const CRUISE_PORTS = [
@@ -119,7 +119,7 @@ function PortAutocomplete({ value, onChange, placeholder, id }) {
         value={value} 
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all" 
+        className="w-full h-10 bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all" 
         placeholder={placeholder}
         autoComplete="off"
       />
@@ -365,12 +365,12 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
                       <select
                         value={day.type}
                         onChange={(e) => updateItineraryDay(index, 'type', e.target.value)}
-                        className="flex-1 bg-slate-600/50 border border-slate-500/50 rounded p-2 text-white text-sm"
+                        className="flex-1 h-10 bg-slate-600/50 border border-slate-500/50 rounded px-3 py-2 text-white text-sm"
                       >
-                        <option value="embarkation">Embarkation</option>
+                        <option value="embarkation">Embark</option>
                         <option value="sea">At Sea</option>
                         <option value="port">Port Day</option>
-                        <option value="disembarkation">Disembarkation</option>
+                        <option value="disembarkation">Disembark</option>
                       </select>
                     </div>
                     
@@ -602,8 +602,8 @@ function DailyJournal({ cruiseDetails }) {
                   weekday: 'long', 
                   month: 'long', 
                   day: 'numeric' 
-                })} - {day.type === 'embarkation' ? `Embarkation (${day.port.split(',')[0]})` : 
-                       day.type === 'disembarkation' ? `Disembarkation (${day.port.split(',')[0]})` :
+                })} - {day.type === 'embarkation' ? `Embark (${day.port.split(',')[0]})` : 
+                       day.type === 'disembarkation' ? `Disembark (${day.port.split(',')[0]})` :
                        day.type === 'port' ? day.port.split(',')[0] : 'At Sea'}
               </option>
             ))}
@@ -777,7 +777,7 @@ function DailyJournal({ cruiseDetails }) {
           
           {(!currentEntry.photos || currentEntry.photos.length === 0) ? (
             <div className="text-center py-8 text-slate-500 italic border-2 border-dashed border-slate-700 rounded-lg flex flex-col items-center gap-2">
-              <ImageIcon className="w-8 h-8 text-slate-600" />
+              <Image className="w-8 h-8 text-slate-600" />
               <span>No photos yet</span>
             </div>
           ) : (
@@ -834,8 +834,8 @@ function DailyJournal({ cruiseDetails }) {
                 </div>
                 <div className="text-slate-400 text-sm">
                   {entry.dayInfo?.type === 'port' ? entry.dayInfo.port : 
-                   entry.dayInfo?.type === 'embarkation' ? 'Embarkation' :
-                   entry.dayInfo?.type === 'disembarkation' ? 'Disembarkation' : 'At Sea'}
+                   entry.dayInfo?.type === 'embarkation' ? 'Embark' :
+                   entry.dayInfo?.type === 'disembarkation' ? 'Disembark' : 'At Sea'}
                 </div>
               </div>
             ))}
