@@ -188,6 +188,13 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
     onDetailsChange({ [field]: value });
   };
 
+  // Helper function to get short port name (city only)
+  const getShortPortName = (fullPortName) => {
+    if (!fullPortName) return '';
+    // Split by comma and take first part (city name)
+    return fullPortName.split(',')[0].trim();
+  };
+
   const generateItinerary = () => {
     if (!cruiseDetails.departureDate || !cruiseDetails.returnDate) {
       alert('Please enter departure and return dates');
@@ -372,11 +379,9 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
                         <label className="block text-xs text-slate-400 mb-1">
                           {day.type === 'port' ? 'Port Name' : 'Home Port'}
                         </label>
-                        <PortAutocomplete
-                          value={day.port}
-                          onChange={(val) => updateItineraryDay(index, 'port', val)}
-                          placeholder="Port name"
-                        />
+                        <div className="text-white text-sm bg-slate-600/50 border border-slate-500/50 rounded p-2">
+                          {getShortPortName(day.port) || 'Not set'}
+                        </div>
                       </div>
                     )}
                   </div>
@@ -593,9 +598,9 @@ function DailyJournal({ cruiseDetails }) {
                   weekday: 'long', 
                   month: 'long', 
                   day: 'numeric' 
-                })} - {day.type === 'embarkation' ? `Embarkation (${day.port})` : 
-                       day.type === 'disembarkation' ? `Disembarkation (${day.port})` :
-                       day.type === 'port' ? day.port : 'At Sea'}
+                })} - {day.type === 'embarkation' ? `Embarkation (${day.port.split(',')[0]})` : 
+                       day.type === 'disembarkation' ? `Disembarkation (${day.port.split(',')[0]})` :
+                       day.type === 'port' ? day.port.split(',')[0] : 'At Sea'}
               </option>
             ))}
           </select>
