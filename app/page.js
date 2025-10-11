@@ -360,12 +360,12 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
                   </div>
                   
                   <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs text-slate-400 mb-1">Type</label>
+                    <div className="flex flex-col">
+                      <label className="block text-xs text-slate-400 mb-1">Location</label>
                       <select
                         value={day.type}
                         onChange={(e) => updateItineraryDay(index, 'type', e.target.value)}
-                        className="w-full bg-slate-600/50 border border-slate-500/50 rounded p-2 text-white text-sm"
+                        className="flex-1 bg-slate-600/50 border border-slate-500/50 rounded p-2 text-white text-sm"
                       >
                         <option value="embarkation">Embarkation</option>
                         <option value="sea">At Sea</option>
@@ -375,12 +375,16 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
                     </div>
                     
                     {(day.type === 'port' || day.type === 'embarkation' || day.type === 'disembarkation') && (
-                      <div>
+                      <div className="flex flex-col">
                         <label className="block text-xs text-slate-400 mb-1">
                           {day.type === 'port' ? 'Port Name' : 'Home Port'}
                         </label>
-                        <div className="text-white text-sm bg-slate-600/50 border border-slate-500/50 rounded p-2">
-                          {getShortPortName(day.port) || 'Not set'}
+                        <div className="flex-1">
+                          <PortAutocomplete
+                            value={day.port}
+                            onChange={(val) => updateItineraryDay(index, 'port', val)}
+                            placeholder="Port name..."
+                          />
                         </div>
                       </div>
                     )}
