@@ -690,6 +690,24 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     }
   };
 
+  const goToPreviousDay = () => {
+    const currentIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
+    if (currentIndex > 0) {
+      setSelectedDate(cruiseDetails.itinerary[currentIndex - 1].date);
+    }
+  };
+
+  const goToNextDay = () => {
+    const currentIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
+    if (currentIndex < cruiseDetails.itinerary.length - 1) {
+      setSelectedDate(cruiseDetails.itinerary[currentIndex + 1].date);
+    }
+  };
+
+  const currentDayIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
+  const isFirstDay = currentDayIndex === 0;
+  const isLastDay = currentDayIndex === cruiseDetails.itinerary.length - 1;
+
   return (
     <div className="space-y-6">
       {showSuccessMessage && (
@@ -929,12 +947,40 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
           )}
         </div>
 
-        <button
-          onClick={saveEntry}
-          className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
-        >
-          {savedEntries.some(e => e.date === selectedDate) ? 'Update Entry' : 'Save Entry'}
-        </button>
+        <div className="grid grid-cols-3 gap-3">
+          <button
+            onClick={goToPreviousDay}
+            disabled={isFirstDay}
+            className={`flex items-center justify-center gap-2 font-bold py-3 px-4 rounded-lg shadow-lg transform transition-all duration-200 ${
+              isFirstDay
+                ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-[1.02] active:scale-[0.98]'
+            }`}
+          >
+            <span>←</span>
+            <span className="hidden sm:inline">Previous</span>
+          </button>
+
+          <button
+            onClick={saveEntry}
+            className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
+          >
+            {savedEntries.some(e => e.date === selectedDate) ? 'Update' : 'Save'}
+          </button>
+
+          <button
+            onClick={goToNextDay}
+            disabled={isLastDay}
+            className={`flex items-center justify-center gap-2 font-bold py-3 px-4 rounded-lg shadow-lg transform transition-all duration-200 ${
+              isLastDay
+                ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
+                : 'bg-blue-600 hover:bg-blue-700 text-white hover:scale-[1.02] active:scale-[0.98]'
+            }`}
+          >
+            <span className="hidden sm:inline">Next</span>
+            <span>→</span>
+          </button>
+        </div>
       </div>
 
       {savedEntries.length > 0 && (
