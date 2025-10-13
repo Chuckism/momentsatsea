@@ -344,8 +344,8 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
       alert('Please generate itinerary first');
       return;
     }
-    onDetailsChange({ itinerary });
-    onSave();
+    // Pass itinerary directly to avoid race condition
+    onSave(itinerary);
   };
 
   return (
@@ -1070,9 +1070,10 @@ export default function HomePage() {
     setCruiseDetails(prev => ({ ...prev, ...updates }));
   };
 
-  const handleSaveSetup = () => {
+  const handleSaveSetup = (itinerary) => {
     const newCruise = {
       ...cruiseDetails,
+      itinerary: itinerary || cruiseDetails.itinerary, // Ensure itinerary is included
       id: Date.now().toString(),
       createdAt: new Date().toISOString(),
       status: 'active'
@@ -1085,6 +1086,7 @@ export default function HomePage() {
     localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
     localStorage.setItem('activeCruiseId', newCruise.id);
     
+    setCruiseDetails(newCruise); // Update with the complete cruise including itinerary
     setAppState('journaling');
   };
 
