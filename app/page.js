@@ -148,6 +148,120 @@ function PortAutocomplete({ value, onChange, placeholder, id }) {
   );
 }
 
+// Cruises Library Component
+function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise }) {
+  const activeCruises = cruises.filter(c => c.status === 'active');
+  const finishedCruises = cruises.filter(c => c.status === 'finished');
+
+  const formatDateRange = (departure, returnDate) => {
+    const start = new Date(departure + 'T00:00:00');
+    const end = new Date(returnDate + 'T00:00:00');
+    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+  };
+
+  const CruiseCard = ({ cruise }) => (
+    <div 
+      onClick={() => onSelectCruise(cruise.id)}
+      className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6 hover:bg-slate-800/70 transition-all cursor-pointer group relative"
+    >
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onDeleteCruise(cruise.id);
+        }}
+        className="absolute top-4 right-4 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        <Trash2 className="w-5 h-5" />
+      </button>
+      
+      <div className="flex items-start gap-4">
+        <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
+          <Ship className="w-6 h-6 text-white" />
+        </div>
+        
+        <div className="flex-1">
+          <h3 className="text-xl font-bold text-white mb-1">
+            {cruise.homePort?.split(',')[0] || 'Cruise'} Adventure
+          </h3>
+          <p className="text-slate-400 text-sm mb-2">
+            {formatDateRange(cruise.departureDate, cruise.returnDate)}
+          </p>
+          <div className="flex items-center gap-4 text-xs text-slate-500">
+            <span>📍 {cruise.itinerary?.length || 0} days</span>
+            <span>🏠 {cruise.homePort?.split(',')[0]}</span>
+            {cruise.status === 'finished' && (
+              <span className="bg-green-600/20 text-green-400 px-2 py-1 rounded">
+                ✓ Finished
+              </span>
+            )}
+            {cruise.status === 'active' && (
+              <span className="bg-blue-600/20 text-blue-400 px-2 py-1 rounded">
+                ● Active
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="space-y-8">
+      <div className="text-center space-y-3">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 mb-2">
+          <Anchor className="w-8 h-8 text-white" />
+        </div>
+        <h2 className="text-4xl font-bold text-white">My Cruises</h2>
+        <p className="text-slate-400 text-lg">Your collection of cruise memories</p>
+      </div>
+
+      <div className="max-w-3xl mx-auto">
+        <button
+          onClick={onStartNew}
+          className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-4 px-6 rounded-xl shadow-lg transform hover:scale-[1.02] transition-all duration-200 flex items-center justify-center gap-3 mb-8"
+        >
+          <Plus className="w-6 h-6" />
+          Start New Cruise
+        </button>
+
+        {cruises.length === 0 ? (
+          <div className="text-center py-16 bg-slate-800/30 border border-slate-700/50 rounded-xl">
+            <Ship className="w-16 h-16 text-slate-600 mx-auto mb-4" />
+            <h3 className="text-xl font-semibold text-slate-400 mb-2">No cruises yet</h3>
+            <p className="text-slate-500">Click "Start New Cruise" to create your first journal</p>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {activeCruises.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                  Active Cruises
+                </h3>
+                {activeCruises.map(cruise => (
+                  <CruiseCard key={cruise.id} cruise={cruise} />
+                ))}
+              </div>
+            )}
+
+            {finishedCruises.length > 0 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-semibold text-slate-300 flex items-center gap-2">
+                  <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                  Finished Cruises
+                </h3>
+                {finishedCruises.map(cruise => (
+                  <CruiseCard key={cruise.id} cruise={cruise} />
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Enhanced Cruise Setup Component with Date-Based Itinerary
 function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
   const [itinerary, setItinerary] = useState([]);
@@ -186,13 +300,6 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
 
   const handleBasicChange = (field, value) => {
     onDetailsChange({ [field]: value });
-  };
-
-  // Helper function to get short port name (city only)
-  const getShortPortName = (fullPortName) => {
-    if (!fullPortName) return '';
-    // Split by comma and take first part (city name)
-    return fullPortName.split(',')[0].trim();
   };
 
   const generateItinerary = () => {
@@ -246,7 +353,6 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
       <div className="absolute -top-20 -left-20 w-40 h-40 bg-blue-500/20 rounded-full blur-3xl"></div>
       <div className="absolute -bottom-20 -right-20 w-40 h-40 bg-cyan-500/20 rounded-full blur-3xl"></div>
       
-      {/* Install App Banner */}
       {showInstallPrompt && (
         <div className="mb-6 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 p-6 border-2 border-blue-400 shadow-2xl animate-slide-down">
           <div className="flex items-start gap-4">
@@ -294,7 +400,6 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
         
         <div className="space-y-6">
           
-          {/* Home Port */}
           <div>
             <label htmlFor="homePort" className="block text-sm font-semibold text-slate-300 mb-2">
               🏠 Home Port (Departure & Return)
@@ -307,7 +412,6 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
             />
           </div>
 
-          {/* Departure Date */}
           <div>
             <label htmlFor="departureDate" className="block text-sm font-semibold text-slate-300 mb-2">
               📅 Departure Date
@@ -321,7 +425,6 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
             />
           </div>
 
-          {/* Return Date */}
           <div>
             <label htmlFor="returnDate" className="block text-sm font-semibold text-slate-300 mb-2">
               📅 Return Date
@@ -335,7 +438,6 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
             />
           </div>
 
-          {/* Generate Itinerary Button */}
           <button
             onClick={generateItinerary}
             className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-3 px-6 rounded-lg transition-colors"
@@ -343,7 +445,6 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
             Generate Itinerary
           </button>
 
-          {/* Itinerary Builder */}
           {itinerary.length > 0 && (
             <div className="space-y-4 pt-6 border-t border-slate-700">
               <h3 className="text-xl font-bold text-white">Your Itinerary</h3>
@@ -419,18 +520,31 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
 }
 
 // Daily Journal Component
-function DailyJournal({ cruiseDetails }) {
+function DailyJournal({ cruiseDetails, onFinishCruise }) {
   const [selectedDate, setSelectedDate] = useState(cruiseDetails.itinerary[0]?.date || '');
   const [entries, setEntries] = useState({});
   const [savedEntries, setSavedEntries] = useState([]);
-  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState('');
 
   useEffect(() => {
-    const stored = localStorage.getItem('cruiseJournalEntries');
+    const stored = localStorage.getItem(`cruiseJournalEntries_${cruiseDetails.id}`);
     if (stored) {
-      setSavedEntries(JSON.parse(stored));
+      const loadedEntries = JSON.parse(stored);
+      setSavedEntries(loadedEntries);
+      
+      const entriesMap = {};
+      loadedEntries.forEach(entry => {
+        entriesMap[entry.date] = {
+          weather: entry.weather || '',
+          activities: entry.activities || [],
+          exceptionalFood: entry.exceptionalFood || '',
+          summary: entry.summary || '',
+          photos: entry.photos || []
+        };
+      });
+      setEntries(entriesMap);
     }
-  }, []);
+  }, [cruiseDetails.id]);
 
   const currentDay = cruiseDetails.itinerary.find(day => day.date === selectedDate);
   const currentEntry = entries[selectedDate] || {
@@ -445,7 +559,7 @@ function DailyJournal({ cruiseDetails }) {
     setEntries(prev => ({
       ...prev,
       [selectedDate]: {
-        ...prev[selectedDate],
+        ...currentEntry,
         [field]: value
       }
     }));
@@ -543,25 +657,36 @@ function DailyJournal({ cruiseDetails }) {
   };
 
   const saveEntry = () => {
+    const existingEntryIndex = savedEntries.findIndex(e => e.date === selectedDate);
+    const isUpdate = existingEntryIndex >= 0;
+    
     const entryToSave = {
       ...currentEntry,
       date: selectedDate,
       dayInfo: currentDay,
-      id: Date.now(),
+      id: isUpdate ? savedEntries[existingEntryIndex].id : Date.now(),
       savedAt: new Date().toISOString(),
     };
 
-    const updatedEntries = [...savedEntries, entryToSave];
+    let updatedEntries;
+    if (isUpdate) {
+      updatedEntries = [...savedEntries];
+      updatedEntries[existingEntryIndex] = entryToSave;
+    } else {
+      updatedEntries = [...savedEntries, entryToSave];
+    }
+    
     setSavedEntries(updatedEntries);
-    localStorage.setItem('cruiseJournalEntries', JSON.stringify(updatedEntries));
+    localStorage.setItem(`cruiseJournalEntries_${cruiseDetails.id}`, JSON.stringify(updatedEntries));
 
-    setShowSuccessMessage(true);
-    setTimeout(() => setShowSuccessMessage(false), 3000);
+    setShowSuccessMessage(isUpdate ? 'updated' : 'saved');
+    setTimeout(() => setShowSuccessMessage(''), 3000);
 
-    // Move to next day if available
-    const currentIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
-    if (currentIndex < cruiseDetails.itinerary.length - 1) {
-      setSelectedDate(cruiseDetails.itinerary[currentIndex + 1].date);
+    if (!isUpdate) {
+      const currentIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
+      if (currentIndex < cruiseDetails.itinerary.length - 1) {
+        setSelectedDate(cruiseDetails.itinerary[currentIndex + 1].date);
+      }
     }
   };
 
@@ -570,7 +695,9 @@ function DailyJournal({ cruiseDetails }) {
       {showSuccessMessage && (
         <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 animate-slide-in">
           <span className="text-xl">✓</span>
-          <span className="font-medium">Entry saved successfully!</span>
+          <span className="font-medium">
+            Entry {showSuccessMessage === 'updated' ? 'updated' : 'saved'} successfully!
+          </span>
         </div>
       )}
 
@@ -584,7 +711,6 @@ function DailyJournal({ cruiseDetails }) {
 
       <div className="rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 border border-slate-700/50 shadow-2xl space-y-6">
         
-        {/* Date Selector */}
         <div>
           <label htmlFor="date" className="block text-sm font-semibold text-slate-300 mb-2">
             📅 Select Day
@@ -610,7 +736,6 @@ function DailyJournal({ cruiseDetails }) {
           </select>
         </div>
 
-        {/* Weather */}
         <div>
           <label htmlFor="weather" className="block text-sm font-semibold text-slate-300 mb-2">
             ☀️ Weather
@@ -626,7 +751,6 @@ function DailyJournal({ cruiseDetails }) {
           />
         </div>
 
-        {/* Activities */}
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <label className="block text-sm font-semibold text-slate-300">
@@ -724,7 +848,6 @@ function DailyJournal({ cruiseDetails }) {
           )}
         </div>
 
-        {/* Exceptional Food */}
         <div>
           <label htmlFor="exceptionalFood" className="block text-sm font-semibold text-slate-300 mb-2">
             🍽️ Exceptional Food Options
@@ -740,7 +863,6 @@ function DailyJournal({ cruiseDetails }) {
           />
         </div>
 
-        {/* Summary */}
         <div>
           <label htmlFor="summary" className="block text-sm font-semibold text-slate-300 mb-2">
             📝 Summary of the Day
@@ -756,7 +878,6 @@ function DailyJournal({ cruiseDetails }) {
           />
         </div>
 
-        {/* General Photos */}
         <div className="pt-4 border-t border-slate-700/50 space-y-3">
           <div className="flex items-center justify-between">
             <label className="block text-sm font-semibold text-slate-300">
@@ -812,7 +933,7 @@ function DailyJournal({ cruiseDetails }) {
           onClick={saveEntry}
           className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
         >
-          Save Entry
+          {savedEntries.some(e => e.date === selectedDate) ? 'Update Entry' : 'Save Entry'}
         </button>
       </div>
 
@@ -823,14 +944,24 @@ function DailyJournal({ cruiseDetails }) {
             {savedEntries.map((entry) => (
               <div
                 key={entry.id}
-                className="bg-slate-700/30 border border-slate-600/50 rounded-lg p-4"
+                onClick={() => setSelectedDate(entry.date)}
+                className={`cursor-pointer rounded-lg p-4 transition-all ${
+                  entry.date === selectedDate 
+                    ? 'bg-blue-600/30 border-2 border-blue-500' 
+                    : 'bg-slate-700/30 border border-slate-600/50 hover:bg-slate-700/50'
+                }`}
               >
-                <div className="text-white font-semibold">
-                  {new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', { 
-                    weekday: 'long', 
-                    month: 'long', 
-                    day: 'numeric' 
-                  })}
+                <div className="flex items-center justify-between">
+                  <div className="text-white font-semibold">
+                    {new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', { 
+                      weekday: 'long', 
+                      month: 'long', 
+                      day: 'numeric' 
+                    })}
+                  </div>
+                  {entry.date === selectedDate && (
+                    <span className="text-blue-400 text-sm">✏️ Editing</span>
+                  )}
                 </div>
                 <div className="text-slate-400 text-sm">
                   {entry.dayInfo?.type === 'port' ? entry.dayInfo.port : 
@@ -842,13 +973,29 @@ function DailyJournal({ cruiseDetails }) {
           </div>
         </div>
       )}
+
+      <div className="rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 border border-slate-700/50 shadow-2xl">
+        <h3 className="text-xl font-bold text-white mb-3">Finished with this cruise?</h3>
+        <p className="text-slate-400 mb-4">
+          Mark this cruise as complete. You can always view it later from your cruise library.
+        </p>
+        <button
+          onClick={onFinishCruise}
+          className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 flex items-center justify-center gap-2"
+        >
+          <Anchor className="w-5 h-5" />
+          Finish Cruise
+        </button>
+      </div>
     </div>
   );
 }
 
 // Main App Component
 export default function HomePage() {
-  const [appState, setAppState] = useState('setup'); 
+  const [appState, setAppState] = useState('cruises-list');
+  const [allCruises, setAllCruises] = useState([]);
+  const [activeCruiseId, setActiveCruiseId] = useState(null);
   
   const [cruiseDetails, setCruiseDetails] = useState({
     homePort: '',
@@ -857,12 +1004,91 @@ export default function HomePage() {
     itinerary: [],
   });
 
+  useEffect(() => {
+    const stored = localStorage.getItem('allCruises');
+    if (stored) {
+      const cruises = JSON.parse(stored);
+      setAllCruises(cruises);
+      
+      const activeStored = localStorage.getItem('activeCruiseId');
+      if (activeStored && cruises.find(c => c.id === activeStored)) {
+        setActiveCruiseId(activeStored);
+        const cruise = cruises.find(c => c.id === activeStored);
+        setCruiseDetails(cruise);
+        setAppState('journaling');
+      }
+    }
+  }, []);
+
   const handleDetailsChange = (updates) => {
     setCruiseDetails(prev => ({ ...prev, ...updates }));
   };
 
   const handleSaveSetup = () => {
+    const newCruise = {
+      ...cruiseDetails,
+      id: Date.now().toString(),
+      createdAt: new Date().toISOString(),
+      status: 'active'
+    };
+    
+    const updatedCruises = [...allCruises, newCruise];
+    setAllCruises(updatedCruises);
+    setActiveCruiseId(newCruise.id);
+    
+    localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
+    localStorage.setItem('activeCruiseId', newCruise.id);
+    
     setAppState('journaling');
+  };
+
+  const handleStartNewCruise = () => {
+    setCruiseDetails({
+      homePort: '',
+      departureDate: '',
+      returnDate: '',
+      itinerary: [],
+    });
+    setActiveCruiseId(null);
+    setAppState('setup');
+  };
+
+  const handleFinishCruise = () => {
+    const updatedCruises = allCruises.map(cruise =>
+      cruise.id === activeCruiseId
+        ? { ...cruise, status: 'finished', finishedAt: new Date().toISOString() }
+        : cruise
+    );
+    
+    setAllCruises(updatedCruises);
+    localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
+    localStorage.removeItem('activeCruiseId');
+    
+    setActiveCruiseId(null);
+    setAppState('cruises-list');
+  };
+
+  const handleSelectCruise = (cruiseId) => {
+    const cruise = allCruises.find(c => c.id === cruiseId);
+    if (cruise) {
+      setActiveCruiseId(cruiseId);
+      setCruiseDetails(cruise);
+      localStorage.setItem('activeCruiseId', cruiseId);
+      setAppState('journaling');
+    }
+  };
+
+  const handleDeleteCruise = (cruiseId) => {
+    if (confirm('Are you sure you want to delete this cruise? This cannot be undone.')) {
+      const updatedCruises = allCruises.filter(c => c.id !== cruiseId);
+      setAllCruises(updatedCruises);
+      localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
+      
+      if (activeCruiseId === cruiseId) {
+        setActiveCruiseId(null);
+        localStorage.removeItem('activeCruiseId');
+      }
+    }
   };
 
   return (
@@ -876,20 +1102,44 @@ export default function HomePage() {
         <div className="w-full max-w-3xl overflow-x-hidden">
           
           <div className="text-center mb-12 space-y-2">
+            {appState !== 'cruises-list' && (
+              <button
+                onClick={() => {
+                  if (confirm('Return to cruise library? Any unsaved changes will be lost.')) {
+                    setAppState('cruises-list');
+                    setActiveCruiseId(null);
+                    localStorage.removeItem('activeCruiseId');
+                  }
+                }}
+                className="mb-4 text-slate-400 hover:text-white transition-colors flex items-center gap-2 mx-auto"
+              >
+                <span>←</span> Back to My Cruises
+              </button>
+            )}
             <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">
               MomentsAtSea
             </h1>
             <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
           </div>
           
-          {appState === 'setup' ? (
+          {appState === 'cruises-list' ? (
+            <CruisesLibrary 
+              cruises={allCruises}
+              onSelectCruise={handleSelectCruise}
+              onStartNew={handleStartNewCruise}
+              onDeleteCruise={handleDeleteCruise}
+            />
+          ) : appState === 'setup' ? (
             <CruiseSetup 
               onSave={handleSaveSetup} 
               cruiseDetails={cruiseDetails} 
               onDetailsChange={handleDetailsChange} 
             />
           ) : (
-            <DailyJournal cruiseDetails={cruiseDetails} />
+            <DailyJournal 
+              cruiseDetails={cruiseDetails}
+              onFinishCruise={handleFinishCruise}
+            />
           )}
 
         </div>
