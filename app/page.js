@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2 } from 'lucide-react';
+import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2, ChevronDown } from 'lucide-react';
 
 // --- Offline Photo Store (IndexedDB) ---
 let _photoDBPromise = null;
@@ -112,7 +112,7 @@ function PhotoImg({ id, alt, className }) {
       </div>
     );
   }
-  return <img src={url} alt={alt} className={className} />;
+  return <img src={url} alt={alt} className={className} loading="lazy" />;
 }
 
 
@@ -170,6 +170,8 @@ const CRUISE_PORTS = [
   "Dubrovnik, Croatia",
   "Lisbon, Portugal"
 ];
+
+const formFieldStyles = "w-full h-12 bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 text-base text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all";
 
 // Autocomplete for single port input
 function PortAutocomplete({ value, onChange, placeholder, id }) {
@@ -232,7 +234,7 @@ function PortAutocomplete({ value, onChange, placeholder, id }) {
         value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        className="w-full h-10 bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+        className={formFieldStyles}
         placeholder={placeholder}
         autoComplete="off"
       />
@@ -550,7 +552,7 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
               id="departureDate"
               value={cruiseDetails.departureDate || ''}
               onChange={(e) => handleBasicChange('departureDate', e.target.value)}
-              className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+              className={formFieldStyles}
             />
           </div>
 
@@ -563,7 +565,7 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
               id="returnDate"
               value={cruiseDetails.returnDate || ''}
               onChange={(e) => handleBasicChange('returnDate', e.target.value)}
-              className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+              className={formFieldStyles}
             />
           </div>
 
@@ -590,18 +592,21 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
                   </div>
                   
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col">
+                    <div className="relative">
                       <label className="block text-xs text-slate-400 mb-1">Location</label>
                       <select
                         value={day.type}
                         onChange={(e) => updateItineraryDay(index, 'type', e.target.value)}
-                        className="flex-1 h-10 bg-slate-600/50 border border-slate-500/50 rounded px-3 py-2 text-white text-sm"
+                        className={`${formFieldStyles} pr-10`}
                       >
                         <option value="embarkation">Embark</option>
                         <option value="sea">At Sea</option>
                         <option value="port">Port Day</option>
                         <option value="disembarkation">Disembark</option>
                       </select>
+                      <div className="pointer-events-none absolute right-3 top-1/2 mt-2 text-slate-400">
+                        <ChevronDown className="h-5 w-5" />
+                      </div>
                     </div>
                     
                     {(day.type === 'port' || day.type === 'embarkation' || day.type === 'disembarkation') && (
@@ -758,16 +763,14 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
   };
   
   const deleteActivityPhoto = async (activityId, photoId) => {
-    // 1. Delete the photo file from the offline database
     try {
       await deletePhotoBlob(photoId);
     } catch (err) {
       console.error("Failed to delete photo blob:", err);
       alert("Error: Could not delete the photo file. Please try again.");
-      return; // Stop if the file can't be deleted
+      return;
     }
 
-    // 2. Remove the photo's metadata from the current entry
     const updatedActivities = (currentEntry.activities || []).map(a =>
       a.id === activityId
         ? { ...a, photos: (a.photos || []).filter(p => p.id !== photoId) }
@@ -775,7 +778,6 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     );
     updateEntry('activities', updatedActivities);
 
-    // 3. ✨ Auto-save this change immediately
     saveEntry(true, { ...currentEntry, activities: updatedActivities });
   };
 
@@ -805,40 +807,27 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
   };
   
   const deleteGeneralPhoto = async (photoId) => {
-    // 1. Delete the photo file from the offline database
     try {
       await deletePhotoBlob(photoId);
     } catch (err) {
       console.error("Failed to delete photo blob:", err);
       alert("Error: Could not delete the photo file. Please try again.");
-      return; // Stop if the file can't be deleted
+      return;
     }
 
-    // 2. Remove the photo's metadata from the current entry
     const updatedPhotos = (currentEntry.photos || []).filter(p => p.id !== photoId);
     updateEntry('photos', updatedPhotos);
 
-    // 3. ✨ Auto-save this change immediately
     saveEntry(true, { ...currentEntry, photos: updatedPhotos });
   };
 
 
-  // Estimate size before saving; show clear message if we’d exceed quota
   function willExceedLocalStorage(key, valueStr) {
     try {
-      // Quick probe: try writing to a temp key; if it throws, we’re out of space
       localStorage.setItem('__ls_probe__', '');
       localStorage.removeItem('__ls_probe__');
-
-      // Rough check: current + new payload size (browsers vary; this is defensive)
-      const currentAll = localStorage.getItem(key) || '[]';
-      const projected = valueStr;
-      const bytes = new Blob([projected]).size;
-      const currentBytes = new Blob([currentAll]).size;
-
-      // Most browsers give ~5MB per origin. Use ~4.5MB soft ceiling.
-      const SOFT_LIMIT = 4_500_000;
-      return (currentBytes + (bytes - currentBytes)) > SOFT_LIMIT;
+      const bytes = new Blob([valueStr]).size;
+      return bytes > 4_500_000;
     } catch {
       return true;
     }
@@ -848,9 +837,8 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     const existingEntryIndex = savedEntries.findIndex(e => e.date === selectedDate);
     const isUpdate = existingEntryIndex >= 0;
 
-    // IMPORTANT: Only store photo metadata (id, caption) in localStorage
     const entryToSave = {
-      ...(updatedEntry || currentEntry), // Use the updated entry if provided for auto-save
+      ...(updatedEntry || currentEntry),
       date: selectedDate,
       dayInfo: currentDay,
       id: isUpdate ? savedEntries[existingEntryIndex].id : Date.now(),
@@ -864,7 +852,6 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     const key = `cruiseJournalEntries_${cruiseDetails.id}`;
     const payload = JSON.stringify(next);
 
-    // Guard against silent failure
     if (willExceedLocalStorage(key, payload)) {
       alert("Save aborted: your device’s offline storage is full. Your TEXT is still on screen—please copy it somewhere safe.");
       return;
@@ -929,7 +916,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
 
       <div className="rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 border border-slate-700/50 shadow-2xl space-y-6">
         
-        <div>
+        <div className="relative">
           <label htmlFor="date" className="block text-sm font-semibold text-slate-300 mb-2">
             📅 Select Day
           </label>
@@ -938,7 +925,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
             id="date"
             value={selectedDate}
             onChange={(e) => setSelectedDate(e.target.value)}
-            className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
+            className={`${formFieldStyles} pr-10`}
           >
             {cruiseDetails.itinerary.map((day) => (
               <option key={day.date} value={day.date}>
@@ -946,12 +933,15 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                   weekday: 'long',
                   month: 'long',
                   day: 'numeric'
-                })} - {day.type === 'embarkation' ? `Embark (${day.port.split(',')[0]})` :
-                      day.type === 'disembarkation' ? `Disembark (${day.port.split(',')[0]})` :
-                      day.type === 'port' ? day.port.split(',')[0] : 'At Sea'}
+                })} - {day.type === 'embarkation' ? `Embark (${day.port?.split(',')[0]})` :
+                      day.type === 'disembarkation' ? `Disembark (${day.port?.split(',')[0]})` :
+                      day.type === 'port' ? day.port?.split(',')[0] : 'At Sea'}
               </option>
             ))}
           </select>
+          <div className="pointer-events-none absolute right-3 top-1/2 mt-3 text-slate-400">
+             <ChevronDown className="h-5 w-5" />
+          </div>
         </div>
 
         <div>
@@ -965,7 +955,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
             value={currentEntry.weather || ''}
             onChange={(e) => updateEntry('weather', e.target.value)}
             placeholder="e.g., Sunny, 85°F"
-            className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-yellow-500/50 focus:border-yellow-500/50 transition-all"
+            className={formFieldStyles}
           />
         </div>
 
@@ -999,7 +989,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                       value={activity.title}
                       onChange={(e) => updateActivity(activity.id, 'title', e.target.value)}
                       placeholder="Activity name (e.g., Team Volleyball)"
-                      className="flex-1 bg-slate-600/50 border border-slate-500/50 rounded-lg p-2 text-white placeholder-slate-400 font-medium focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all"
+                      className="flex-1 bg-slate-600/50 border border-slate-500/50 rounded-lg p-2 text-white placeholder-slate-400 font-medium focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all h-12 text-base"
                     />
                     <button
                       onClick={() => deleteActivity(activity.id)}
@@ -1014,7 +1004,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                     onChange={(e) => updateActivity(activity.id, 'description', e.target.value)}
                     rows="3"
                     placeholder="Describe this activity..."
-                    className="w-full bg-slate-600/50 border border-slate-500/50 rounded-lg p-3 text-white placeholder-slate-400 focus:ring-2 focus:ring-emerald-500/50 focus:border-emerald-500/50 transition-all resize-none"
+                    className={`${formFieldStyles} min-h-[96px] py-3`}
                   />
 
                   <div className="pt-2 border-t border-slate-600/30 space-y-3">
@@ -1073,7 +1063,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
             onChange={(e) => updateEntry('exceptionalFood', e.target.value)}
             rows="3"
             placeholder="Memorable meals or dishes..."
-            className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-orange-500/50 focus:border-orange-500/50 transition-all resize-none"
+            className={`${formFieldStyles} min-h-[96px] py-3`}
           />
         </div>
 
@@ -1088,7 +1078,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
             onChange={(e) => updateEntry('summary', e.target.value)}
             rows="5"
             placeholder="Write your thoughts, favorite moments..."
-            className="w-full bg-slate-700/50 border border-slate-600/50 rounded-lg p-3 text-white placeholder-slate-500 focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all resize-none"
+            className={`${formFieldStyles} min-h-[120px] py-3`}
           />
         </div>
 
@@ -1103,7 +1093,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
               <input
                 type="file"
                 multiple
-                accept="image/*"
+                accept="image/*;capture=camera"
                 onChange={handleGeneralPhotoUpload}
                 className="hidden"
               />
@@ -1202,9 +1192,9 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                   )}
                 </div>
                 <div className="text-slate-400 text-sm">
-                  {entry.dayInfo?.type === 'port' ? entry.dayInfo.port :
-                   entry.dayInfo?.type === 'embarkation' ? 'Embark' :
-                   entry.dayInfo?.type === 'disembarkation' ? 'Disembark' : 'At Sea'}
+                  {entry.dayInfo?.type === 'port' ? entry.dayInfo.port?.split(',')[0] :
+                   entry.dayInfo?.type === 'embarkation' ? `Embark (${entry.dayInfo.port?.split(',')[0]})` :
+                   entry.dayInfo?.type === 'disembarkation' ? `Disembark (${entry.dayInfo.port?.split(',')[0]})` : 'At Sea'}
                 </div>
               </div>
             ))}
@@ -1243,6 +1233,11 @@ export default function HomePage() {
   });
 
   useEffect(() => {
+    // Attempt to make storage persistent
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist();
+    }
+
     const stored = localStorage.getItem('allCruises');
     if (stored) {
       const cruises = JSON.parse(stored);
@@ -1265,7 +1260,7 @@ export default function HomePage() {
   const handleSaveSetup = (itinerary) => {
     const newCruise = {
       ...cruiseDetails,
-      itinerary: itinerary || cruiseDetails.itinerary, // Ensure itinerary is included
+      itinerary: itinerary || cruiseDetails.itinerary,
       id: Date.now().toString(),
       createdAt: new Date().toISOString(),
       status: 'active'
@@ -1278,7 +1273,7 @@ export default function HomePage() {
     localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
     localStorage.setItem('activeCruiseId', newCruise.id);
     
-    setCruiseDetails(newCruise); // Update with the complete cruise including itinerary
+    setCruiseDetails(newCruise);
     setAppState('journaling');
   };
 
@@ -1324,7 +1319,6 @@ export default function HomePage() {
       setAllCruises(updatedCruises);
       localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
       
-      // Clean up orphaned entries and photos
       localStorage.removeItem(`cruiseJournalEntries_${cruiseId}`);
       try { 
         await deleteAllPhotosForCruise(cruiseId); 
@@ -1344,7 +1338,7 @@ export default function HomePage() {
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-x-hidden">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute bottom-0 right-1/f4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
       </div>
       
       <div className="relative z-10 flex flex-col items-center justify-start p-6 sm:p-8 md:p-12 overflow-x-hidden">
@@ -1394,6 +1388,21 @@ export default function HomePage() {
         </div>
       </div>
       
+      <style jsx global>{`
+        /* Normalize iOS form controls */
+        input, select, textarea, button {
+          -webkit-appearance: none;
+          appearance: none;
+          border-radius: 0;
+          font-size: 16px; /* Prevents iOS zoom */
+        }
+        select {
+          background-image: none; /* remove native arrow on iOS */
+        }
+        textarea {
+          resize: vertical;
+        }
+      `}</style>
       <style jsx>{`
         @keyframes gradient {
           0%, 100% { background-position: 0% 50%; }
