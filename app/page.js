@@ -3,6 +3,87 @@
 import { useState, useRef, useEffect } from 'react';
 import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2 } from 'lucide-react';
 
+// --- Offline Photo Store (IndexedDB) ---
+let _photoDBPromise = null;
+function openPhotoDB() {
+  if (_photoDBPromise) return _photoDBPromise;
+  _photoDBPromise = new Promise((resolve, reject) => {
+    const req = indexedDB.open('momentsatsea', 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('photos')) {
+        const store = db.createObjectStore('photos', { keyPath: 'id' });
+        store.createIndex('byCruise', 'cruiseId');
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  return _photoDBPromise;
+}
+
+async function putPhoto({ id, cruiseId, arrayBuffer, type, caption = '' }) {
+  const db = await openPhotoDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('photos', 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    const blob = new Blob([arrayBuffer], { type });
+    tx.objectStore('photos').put({ id, cruiseId, blob, type, caption, createdAt: Date.now() });
+  });
+}
+
+async function getPhotoBlob(id) {
+  const db = await openPhotoDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('photos', 'readonly');
+    const req = tx.objectStore('photos').get(id);
+    req.onsuccess = () => resolve(req.result?.blob || null);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function deletePhotoBlob(id) {
+  const db = await openPhotoDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('photos', 'readwrite');
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+    tx.objectStore('photos').delete(id);
+  });
+}
+
+// Helper: generate stable IDs offline
+function makeId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
+}
+
+// React helper to render a photo by ID (handles objectURL + cleanup)
+function PhotoImg({ id, alt, className }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      const blob = await getPhotoBlob(id);
+      if (!alive) return;
+      if (blob) setUrl(URL.createObjectURL(blob));
+      else setUrl(null);
+    })();
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  if (!url) {
+    return <div className={`bg-slate-700/40 border border-slate-600/50 rounded-lg ${className || ''}`} style={{display:'grid',placeItems:'center'}}>Loading…</div>;
+  }
+  return <img src={url} alt={alt} className={className} />;
+}
+
+
 // Major cruise ports database
 const CRUISE_PORTS = [
   "Galveston, Texas",
@@ -113,13 +194,13 @@ function PortAutocomplete({ value, onChange, placeholder, id }) {
 
   return (
     <div className="relative" ref={wrapperRef}>
-      <input 
-        type="text" 
-        id={id} 
-        value={value} 
+      <input
+        type="text"
+        id={id}
+        value={value}
         onChange={handleChange}
         onKeyDown={handleKeyDown}
-        className="w-full h-10 bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all" 
+        className="w-full h-10 bg-slate-700/50 border border-slate-600/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition-all"
         placeholder={placeholder}
         autoComplete="off"
       />
@@ -131,8 +212,8 @@ function PortAutocomplete({ value, onChange, placeholder, id }) {
               key={suggestion}
               onClick={() => handleSuggestionClick(suggestion)}
               className={`px-4 py-3 cursor-pointer transition-colors ${
-                index === activeSuggestion 
-                  ? 'bg-blue-600/20 text-blue-300' 
+                index === activeSuggestion
+                  ? 'bg-blue-600/20 text-blue-300'
                   : 'text-slate-300 hover:bg-slate-700/50'
               }`}
             >
@@ -160,7 +241,7 @@ function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise })
   };
 
   const CruiseCard = ({ cruise }) => (
-    <div 
+    <div
       onClick={() => onSelectCruise(cruise.id)}
       className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-6 hover:bg-slate-800/70 transition-all cursor-pointer group relative"
     >
@@ -308,26 +389,40 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
       return;
     }
 
-    const start = new Date(cruiseDetails.departureDate);
-    const end = new Date(cruiseDetails.returnDate);
-    const days = [];
-    
-    let current = new Date(start);
-    let dayNum = 0;
+    // Force local midnight to avoid TZ drift
+    const start = new Date(`${cruiseDetails.departureDate}T00:00:00`);
+    const end   = new Date(`${cruiseDetails.returnDate}T00:00:00`);
 
-    while (current <= end) {
-      const dateStr = current.toISOString().split('T')[0];
-      const isFirst = dayNum === 0;
-      const isLast = current.getTime() === end.getTime();
-      
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      alert('Invalid date(s). Please reselect.');
+      return;
+    }
+    if (start > end) {
+      alert('Return date must be after departure date.');
+      return;
+    }
+
+    const days = [];
+    const cur = new Date(start);
+    let idx = 0;
+
+    while (cur <= end) {
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, '0');
+      const dd = String(cur.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+
+      const isFirst = idx === 0;
+      const isLast  = cur.getTime() === end.getTime();
+
       days.push({
         date: dateStr,
         type: isFirst ? 'embarkation' : (isLast ? 'disembarkation' : 'sea'),
-        port: isFirst || isLast ? cruiseDetails.homePort : ''
+        port: isFirst || isLast ? (cruiseDetails.homePort || '') : ''
       });
-      
-      current.setDate(current.getDate() + 1);
-      dayNum++;
+
+      cur.setDate(cur.getDate() + 1);
+      idx++;
     }
 
     setItinerary(days);
@@ -452,10 +547,10 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
                 <div key={day.date} className="bg-slate-700/30 rounded-lg p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-white font-medium">
-                      {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { 
-                        weekday: 'long', 
-                        month: 'long', 
-                        day: 'numeric' 
+                      {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', {
+                        weekday: 'long',
+                        month: 'long',
+                        day: 'numeric'
                       })}
                     </span>
                   </div>
@@ -497,8 +592,8 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
         </div>
         
         {itinerary.length > 0 && (
-          <button 
-            onClick={handleSaveItinerary} 
+          <button
+            onClick={handleSaveItinerary}
             className="group relative w-full overflow-hidden bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-700 hover:via-blue-600 hover:to-cyan-600 text-white font-bold py-4 px-6 rounded-xl text-lg shadow-xl shadow-blue-500/25 transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
           >
             <span className="relative z-10 flex items-center justify-center gap-2">
@@ -585,119 +680,148 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
   const deleteActivity = (id) => {
     updateEntry('activities', currentEntry.activities.filter(a => a.id !== id));
   };
-
-  const convertToBase64 = (file) => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
+  
+  // Convert File -> ArrayBuffer
+  async function fileToArrayBuffer(file) {
+    return await file.arrayBuffer();
+  }
 
   const handleActivityPhotoUpload = async (activityId, e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+    const files = Array.from(e.target.files || []);
+    e.target.value = ''; // allow re-selecting same file next time
+    if (!files.length) return;
 
-    const newPhotos = await Promise.all(
-      files.map(async (file) => ({
-        id: Date.now() + Math.random(),
-        data: await convertToBase64(file),
-        caption: ''
-      }))
-    );
+    try {
+      const newIds = [];
+      for (const file of files) {
+        const id = makeId();
+        const buf = await fileToArrayBuffer(file);
+        await putPhoto({ id, cruiseId: cruiseDetails.id, arrayBuffer: buf, type: file.type, caption: '' });
+        newIds.push({ id, caption: '' });
+      }
 
-    const updated = currentEntry.activities.map(activity =>
-      activity.id === activityId
-        ? { ...activity, photos: [...activity.photos, ...newPhotos] }
-        : activity
-    );
-    updateEntry('activities', updated);
+      const updated = (currentEntry.activities || []).map(a =>
+        a.id === activityId ? { ...a, photos: [...(a.photos || []), ...newIds] } : a
+      );
+      updateEntry('activities', updated);
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't save photos offline (device storage full or permission issue). Your text is safe.");
+    }
   };
-
+  
   const updateActivityPhotoCaption = (activityId, photoId, caption) => {
-    const updated = currentEntry.activities.map(activity =>
-      activity.id === activityId
-        ? {
-            ...activity,
-            photos: activity.photos.map(photo =>
-              photo.id === photoId ? { ...photo, caption } : photo
-            )
-          }
-        : activity
+    const updated = (currentEntry.activities || []).map(a =>
+      a.id === activityId
+        ? { ...a, photos: (a.photos || []).map(p => p.id === photoId ? { ...p, caption } : p) }
+        : a
     );
     updateEntry('activities', updated);
   };
-
-  const deleteActivityPhoto = (activityId, photoId) => {
-    const updated = currentEntry.activities.map(activity =>
-      activity.id === activityId
-        ? {
-            ...activity,
-            photos: activity.photos.filter(photo => photo.id !== photoId)
-          }
-        : activity
+  
+  const deleteActivityPhoto = async (activityId, photoId) => {
+    try { await deletePhotoBlob(photoId); } catch {}
+    const updated = (currentEntry.activities || []).map(a =>
+      a.id === activityId
+        ? { ...a, photos: (a.photos || []).filter(p => p.id !== photoId) }
+        : a
     );
     updateEntry('activities', updated);
   };
 
   const handleGeneralPhotoUpload = async (e) => {
-    const files = Array.from(e.target.files);
-    if (files.length === 0) return;
+    const files = Array.from(e.target.files || []);
+    e.target.value = '';
+    if (!files.length) return;
 
-    const newPhotos = await Promise.all(
-      files.map(async (file) => ({
-        id: Date.now() + Math.random(),
-        data: await convertToBase64(file),
-        caption: ''
-      }))
-    );
-
-    updateEntry('photos', [...(currentEntry.photos || []), ...newPhotos]);
+    try {
+      const newIds = [];
+      for (const file of files) {
+        const id = makeId();
+        const buf = await fileToArrayBuffer(file);
+        await putPhoto({ id, cruiseId: cruiseDetails.id, arrayBuffer: buf, type: file.type, caption: '' });
+        newIds.push({ id, caption: '' });
+      }
+      updateEntry('photos', [...(currentEntry.photos || []), ...newIds]);
+    } catch (err) {
+      console.error(err);
+      alert("Couldn't save photos offline (device storage full or permission issue). Your text is safe.");
+    }
   };
-
+  
   const updateGeneralPhotoCaption = (photoId, caption) => {
-    const updated = currentEntry.photos.map(photo =>
-      photo.id === photoId ? { ...photo, caption } : photo
-    );
+    const updated = (currentEntry.photos || []).map(p => p.id === photoId ? { ...p, caption } : p);
     updateEntry('photos', updated);
   };
-
-  const deleteGeneralPhoto = (photoId) => {
-    updateEntry('photos', currentEntry.photos.filter(photo => photo.id !== photoId));
+  
+  const deleteGeneralPhoto = async (photoId) => {
+    try { await deletePhotoBlob(photoId); } catch {}
+    updateEntry('photos', (currentEntry.photos || []).filter(p => p.id !== photoId));
   };
+
+
+  // Estimate size before saving; show clear message if we’d exceed quota
+  function willExceedLocalStorage(key, valueStr) {
+    try {
+      // Quick probe: try writing to a temp key; if it throws, we’re out of space
+      localStorage.setItem('__ls_probe__', '');
+      localStorage.removeItem('__ls_probe__');
+
+      // Rough check: current + new payload size (browsers vary; this is defensive)
+      const currentAll = localStorage.getItem(key) || '[]';
+      const projected = valueStr;
+      const bytes = new Blob([projected]).size;
+      const currentBytes = new Blob([currentAll]).size;
+
+      // Most browsers give ~5MB per origin. Use ~4.5MB soft ceiling.
+      const SOFT_LIMIT = 4_500_000;
+      return (currentBytes + (bytes - currentBytes)) > SOFT_LIMIT;
+    } catch {
+      return true;
+    }
+  }
 
   const saveEntry = () => {
     const existingEntryIndex = savedEntries.findIndex(e => e.date === selectedDate);
     const isUpdate = existingEntryIndex >= 0;
-    
+
+    // IMPORTANT: Only store photo metadata (id, caption) in localStorage
     const entryToSave = {
-      ...currentEntry,
+      ...currentEntry, // Contains weather, food, summary, etc.
       date: selectedDate,
       dayInfo: currentDay,
       id: isUpdate ? savedEntries[existingEntryIndex].id : Date.now(),
       savedAt: new Date().toISOString(),
     };
 
-    let updatedEntries;
-    if (isUpdate) {
-      updatedEntries = [...savedEntries];
-      updatedEntries[existingEntryIndex] = entryToSave;
-    } else {
-      updatedEntries = [...savedEntries, entryToSave];
+    const next = isUpdate
+      ? (() => { const copy = [...savedEntries]; copy[existingEntryIndex] = entryToSave; return copy; })()
+      : [...savedEntries, entryToSave];
+
+    const key = `cruiseJournalEntries_${cruiseDetails.id}`;
+    const payload = JSON.stringify(next);
+
+    // Guard against silent failure
+    if (willExceedLocalStorage(key, payload)) {
+      alert("Save aborted: your device’s offline storage is full. Your TEXT is still on screen—please copy it somewhere safe.");
+      return;
     }
-    
-    setSavedEntries(updatedEntries);
-    localStorage.setItem(`cruiseJournalEntries_${cruiseDetails.id}`, JSON.stringify(updatedEntries));
 
-    setShowSuccessMessage(isUpdate ? 'updated' : 'saved');
-    setTimeout(() => setShowSuccessMessage(''), 3000);
+    try {
+      localStorage.setItem(key, payload);
+      setSavedEntries(next);
+      setShowSuccessMessage(isUpdate ? 'updated' : 'saved');
+      setTimeout(() => setShowSuccessMessage(''), 3000);
 
-    if (!isUpdate) {
-      const currentIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
-      if (currentIndex < cruiseDetails.itinerary.length - 1) {
-        setSelectedDate(cruiseDetails.itinerary[currentIndex + 1].date);
+      if (!isUpdate) {
+        const i = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
+        if (i < cruiseDetails.itinerary.length - 1) {
+          setSelectedDate(cruiseDetails.itinerary[i + 1].date);
+        }
       }
+    } catch (err) {
+      console.error('Failed to save entry:', err);
+      alert("CRITICAL: Failed to save your entry (browser storage error). Please copy your text out before refreshing.");
     }
   };
 
@@ -753,13 +877,13 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
           >
             {cruiseDetails.itinerary.map((day) => (
               <option key={day.date} value={day.date}>
-                {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { 
-                  weekday: 'long', 
-                  month: 'long', 
-                  day: 'numeric' 
-                })} - {day.type === 'embarkation' ? `Embark (${day.port.split(',')[0]})` : 
-                       day.type === 'disembarkation' ? `Disembark (${day.port.split(',')[0]})` :
-                       day.type === 'port' ? day.port.split(',')[0] : 'At Sea'}
+                {new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'long',
+                  day: 'numeric'
+                })} - {day.type === 'embarkation' ? `Embark (${day.port.split(',')[0]})` :
+                      day.type === 'disembarkation' ? `Disembark (${day.port.split(',')[0]})` :
+                      day.type === 'port' ? day.port.split(',')[0] : 'At Sea'}
               </option>
             ))}
           </select>
@@ -848,11 +972,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                         {activity.photos.map((photo) => (
                           <div key={photo.id} className="relative group">
-                            <img
-                              src={photo.data || photo.preview}
-                              alt="Activity"
-                              className="w-full h-32 object-cover rounded-lg border border-slate-600/50"
-                            />
+                            <PhotoImg id={photo.id} alt="Activity" className="w-full h-32 object-cover rounded-lg border border-slate-600/50" />
                             <button
                               onClick={() => deleteActivityPhoto(activity.id, photo.id)}
                               className="absolute top-1 right-1 bg-red-500/90 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
@@ -934,11 +1054,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
               {currentEntry.photos.map((photo) => (
                 <div key={photo.id} className="relative group">
-                  <img
-                    src={photo.data || photo.preview}
-                    alt="General"
-                    className="w-full h-32 object-cover rounded-lg border border-slate-600/50"
-                  />
+                  <PhotoImg id={photo.id} alt="General" className="w-full h-32 object-cover rounded-lg border border-slate-600/50" />
                   <button
                     onClick={() => deleteGeneralPhoto(photo.id)}
                     className="absolute top-1 right-1 bg-red-500/90 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
@@ -1003,17 +1119,17 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                 key={entry.id}
                 onClick={() => setSelectedDate(entry.date)}
                 className={`cursor-pointer rounded-lg p-4 transition-all ${
-                  entry.date === selectedDate 
-                    ? 'bg-blue-600/30 border-2 border-blue-500' 
+                  entry.date === selectedDate
+                    ? 'bg-blue-600/30 border-2 border-blue-500'
                     : 'bg-slate-700/30 border border-slate-600/50 hover:bg-slate-700/50'
                 }`}
               >
                 <div className="flex items-center justify-between">
                   <div className="text-white font-semibold">
-                    {new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', { 
-                      weekday: 'long', 
-                      month: 'long', 
-                      day: 'numeric' 
+                    {new Date(entry.date + 'T00:00:00').toLocaleDateString('en-US', {
+                      weekday: 'long',
+                      month: 'long',
+                      day: 'numeric'
                     })}
                   </div>
                   {entry.date === selectedDate && (
@@ -1021,7 +1137,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                   )}
                 </div>
                 <div className="text-slate-400 text-sm">
-                  {entry.dayInfo?.type === 'port' ? entry.dayInfo.port : 
+                  {entry.dayInfo?.type === 'port' ? entry.dayInfo.port :
                    entry.dayInfo?.type === 'embarkation' ? 'Embark' :
                    entry.dayInfo?.type === 'disembarkation' ? 'Disembark' : 'At Sea'}
                 </div>
@@ -1053,7 +1169,7 @@ export default function HomePage() {
   const [appState, setAppState] = useState('cruises-list');
   const [allCruises, setAllCruises] = useState([]);
   const [activeCruiseId, setActiveCruiseId] = useState(null);
-  
+ 
   const [cruiseDetails, setCruiseDetails] = useState({
     homePort: '',
     departureDate: '',
@@ -1138,14 +1254,17 @@ export default function HomePage() {
   };
 
   const handleDeleteCruise = (cruiseId) => {
-    if (confirm('Are you sure you want to delete this cruise? This cannot be undone.')) {
+    if (confirm('Are you sure you want to delete this cruise and all its entries? This cannot be undone.')) {
       const updatedCruises = allCruises.filter(c => c.id !== cruiseId);
       setAllCruises(updatedCruises);
       localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
+      // Clean up orphaned entries
+      localStorage.removeItem(`cruiseJournalEntries_${cruiseId}`);
       
       if (activeCruiseId === cruiseId) {
         setActiveCruiseId(null);
         localStorage.removeItem('activeCruiseId');
+        setAppState('cruises-list');
       }
     }
   };
@@ -1182,20 +1301,20 @@ export default function HomePage() {
           </div>
           
           {appState === 'cruises-list' ? (
-            <CruisesLibrary 
+            <CruisesLibrary
               cruises={allCruises}
               onSelectCruise={handleSelectCruise}
               onStartNew={handleStartNewCruise}
               onDeleteCruise={handleDeleteCruise}
             />
           ) : appState === 'setup' ? (
-            <CruiseSetup 
-              onSave={handleSaveSetup} 
-              cruiseDetails={cruiseDetails} 
-              onDetailsChange={handleDetailsChange} 
+            <CruiseSetup
+              onSave={handleSaveSetup}
+              cruiseDetails={cruiseDetails}
+              onDetailsChange={handleDetailsChange}
             />
           ) : (
-            <DailyJournal 
+            <DailyJournal
               cruiseDetails={cruiseDetails}
               onFinishCruise={handleFinishCruise}
             />
