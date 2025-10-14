@@ -1114,7 +1114,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
         <div className="rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 border border-slate-700/50 shadow-2xl">
           <h3 className="text-2xl font-bold text-white mb-4">Saved Entries ({savedEntries.length})</h3>
           <div className="space-y-3">
-            {savedEntries.map((entry) => (
+          {[...savedEntries].sort((a, b) => a.date.localeCompare(b.date)).map((entry) => (
               <div
                 key={entry.id}
                 onClick={() => setSelectedDate(entry.date)}
