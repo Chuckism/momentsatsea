@@ -1040,7 +1040,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                             <PhotoImg id={photo.id} alt="Activity" className="w-full h-32 object-cover rounded-lg border border-slate-600/50" />
                             <button
                               onClick={() => deleteActivityPhoto(activity.id, photo.id)}
-                              className="absolute top-1 right-1 bg-red-500/90 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                              className="absolute top-1 right-1 bg-red-500/90 hover:bg-red-600 text-white p-1 rounded-full transition-opacity opacity-100 md:opacity-0 group-hover:opacity-100"
                             >
                               <X className="w-4 h-4" />
                             </button>
@@ -1122,7 +1122,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                   <PhotoImg id={photo.id} alt="General" className="w-full h-32 object-cover rounded-lg border border-slate-600/50" />
                   <button
                     onClick={() => deleteGeneralPhoto(photo.id)}
-                    className="absolute top-1 right-1 bg-red-500/90 hover:bg-red-600 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1 right-1 bg-red-500/90 hover:bg-red-600 text-white p-1 rounded-full transition-opacity opacity-100 md:opacity-0 group-hover:opacity-100"
                   >
                     <X className="w-4 h-4" />
                   </button>
