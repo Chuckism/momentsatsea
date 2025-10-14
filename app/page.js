@@ -53,6 +53,27 @@ async function deletePhotoBlob(id) {
   });
 }
 
+async function deleteAllPhotosForCruise(cruiseId) {
+  const db = await openPhotoDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('photos', 'readwrite');
+    const store = tx.objectStore('photos');
+    const idx = store.index('byCruise');
+    const req = idx.openKeyCursor(IDBKeyRange.only(cruiseId));
+    req.onsuccess = () => {
+      const cursor = req.result;
+      if (cursor) {
+        store.delete(cursor.primaryKey);
+        cursor.continue();
+      } else {
+        resolve();
+      }
+    };
+    req.onerror = () => reject(req.error);
+  });
+}
+
+
 // Helper: generate stable IDs offline
 function makeId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
@@ -63,22 +84,33 @@ function makeId() {
 function PhotoImg({ id, alt, className }) {
   const [url, setUrl] = useState(null);
   useEffect(() => {
-    let alive = true;
+    let objectUrl = null;
+    let cancelled = false;
     (async () => {
-      const blob = await getPhotoBlob(id);
-      if (!alive) return;
-      if (blob) setUrl(URL.createObjectURL(blob));
-      else setUrl(null);
+      try {
+        const blob = await getPhotoBlob(id);
+        if (cancelled || !blob) return setUrl(null);
+        objectUrl = URL.createObjectURL(blob);
+        setUrl(objectUrl);
+      } catch {
+        setUrl(null);
+      }
     })();
     return () => {
-      alive = false;
-      if (url) URL.revokeObjectURL(url);
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   if (!url) {
-    return <div className={`bg-slate-700/40 border border-slate-600/50 rounded-lg ${className || ''}`} style={{display:'grid',placeItems:'center'}}>Loading…</div>;
+    return (
+      <div
+        className={`bg-slate-700/40 border border-slate-600/50 rounded-lg ${className || ''}`}
+        style={{ display: 'grid', placeItems: 'center' }}
+      >
+        Loading…
+      </div>
+    );
   }
   return <img src={url} alt={alt} className={className} />;
 }
@@ -235,8 +267,10 @@ function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise })
   const finishedCruises = cruises.filter(c => c.status === 'finished');
 
   const formatDateRange = (departure, returnDate) => {
+    if (!departure || !returnDate) return 'Dates not set';
     const start = new Date(departure + 'T00:00:00');
-    const end = new Date(returnDate + 'T00:00:00');
+    const end   = new Date(returnDate + 'T00:00:00');
+    if (Number.isNaN(start) || Number.isNaN(end)) return 'Dates not set';
     return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
   };
 
@@ -622,14 +656,14 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
   const [showSuccessMessage, setShowSuccessMessage] = useState('');
 
   useEffect(() => {
-    const stored = localStorage.getItem(`cruiseJournalEntries_${cruiseDetails.id}`);
-    if (stored) {
+    try {
+      const stored = localStorage.getItem(`cruiseJournalEntries_${cruiseDetails.id}`);
+      if (!stored) return;
       const loadedEntries = JSON.parse(stored);
-      setSavedEntries(loadedEntries);
-      
-      const entriesMap = {};
-      loadedEntries.forEach(entry => {
-        entriesMap[entry.date] = {
+      setSavedEntries(Array.isArray(loadedEntries) ? loadedEntries : []);
+      const map = {};
+      (loadedEntries || []).forEach(entry => {
+        map[entry.date] = {
           weather: entry.weather || '',
           activities: entry.activities || [],
           exceptionalFood: entry.exceptionalFood || '',
@@ -637,7 +671,11 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
           photos: entry.photos || []
         };
       });
-      setEntries(entriesMap);
+      setEntries(map);
+    } catch (e) {
+      console.error('Failed to load entries', e);
+      setSavedEntries([]);
+      setEntries({});
     }
   }, [cruiseDetails.id]);
 
@@ -1280,13 +1318,19 @@ export default function HomePage() {
     }
   };
 
-  const handleDeleteCruise = (cruiseId) => {
+  const handleDeleteCruise = async (cruiseId) => {
     if (confirm('Are you sure you want to delete this cruise and all its entries? This cannot be undone.')) {
       const updatedCruises = allCruises.filter(c => c.id !== cruiseId);
       setAllCruises(updatedCruises);
       localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
-      // Clean up orphaned entries
+      
+      // Clean up orphaned entries and photos
       localStorage.removeItem(`cruiseJournalEntries_${cruiseId}`);
+      try { 
+        await deleteAllPhotosForCruise(cruiseId); 
+      } catch (e) { 
+        console.error('Photo purge failed', e); 
+      }
       
       if (activeCruiseId === cruiseId) {
         setActiveCruiseId(null);
