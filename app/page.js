@@ -586,16 +586,26 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     updateEntry('activities', currentEntry.activities.filter(a => a.id !== id));
   };
 
-  const handleActivityPhotoUpload = (activityId, e) => {
+  const convertToBase64 = (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleActivityPhotoUpload = async (activityId, e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
-    const newPhotos = files.map(file => ({
-      id: Date.now() + Math.random(),
-      file: file,
-      preview: URL.createObjectURL(file),
-      caption: ''
-    }));
+    const newPhotos = await Promise.all(
+      files.map(async (file) => ({
+        id: Date.now() + Math.random(),
+        data: await convertToBase64(file),
+        caption: ''
+      }))
+    );
 
     const updated = currentEntry.activities.map(activity =>
       activity.id === activityId
@@ -631,16 +641,17 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     updateEntry('activities', updated);
   };
 
-  const handleGeneralPhotoUpload = (e) => {
+  const handleGeneralPhotoUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (files.length === 0) return;
 
-    const newPhotos = files.map(file => ({
-      id: Date.now() + Math.random(),
-      file: file,
-      preview: URL.createObjectURL(file),
-      caption: ''
-    }));
+    const newPhotos = await Promise.all(
+      files.map(async (file) => ({
+        id: Date.now() + Math.random(),
+        data: await convertToBase64(file),
+        caption: ''
+      }))
+    );
 
     updateEntry('photos', [...(currentEntry.photos || []), ...newPhotos]);
   };
@@ -838,7 +849,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                         {activity.photos.map((photo) => (
                           <div key={photo.id} className="relative group">
                             <img
-                              src={photo.preview}
+                              src={photo.data || photo.preview}
                               alt="Activity"
                               className="w-full h-32 object-cover rounded-lg border border-slate-600/50"
                             />
@@ -924,7 +935,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
               {currentEntry.photos.map((photo) => (
                 <div key={photo.id} className="relative group">
                   <img
-                    src={photo.preview}
+                    src={photo.data || photo.preview}
                     alt="General"
                     className="w-full h-32 object-cover rounded-lg border border-slate-600/50"
                   />
