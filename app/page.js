@@ -1338,7 +1338,7 @@ export default function HomePage() {
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-x-hidden">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl animate-pulse"></div>
-        <div className="absolute bottom-0 right-1/f4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
       </div>
       
       <div className="relative z-10 flex flex-col items-center justify-start p-6 sm:p-8 md:p-12 overflow-x-hidden">
@@ -1390,11 +1390,11 @@ export default function HomePage() {
       
       <style jsx global>{`
         /* Normalize iOS form controls */
-        input, select, textarea, button {
+        input, select, textarea {
           -webkit-appearance: none;
           appearance: none;
           border-radius: 0;
-          font-size: 16px; /* Prevents iOS zoom */
+          font-size: 16px !important; /* Prevents iOS zoom */
         }
         select {
           background-image: none; /* remove native arrow on iOS */
