@@ -720,13 +720,25 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
   };
   
   const deleteActivityPhoto = async (activityId, photoId) => {
-    try { await deletePhotoBlob(photoId); } catch {}
-    const updated = (currentEntry.activities || []).map(a =>
+    // 1. Delete the photo file from the offline database
+    try {
+      await deletePhotoBlob(photoId);
+    } catch (err) {
+      console.error("Failed to delete photo blob:", err);
+      alert("Error: Could not delete the photo file. Please try again.");
+      return; // Stop if the file can't be deleted
+    }
+
+    // 2. Remove the photo's metadata from the current entry
+    const updatedActivities = (currentEntry.activities || []).map(a =>
       a.id === activityId
         ? { ...a, photos: (a.photos || []).filter(p => p.id !== photoId) }
         : a
     );
-    updateEntry('activities', updated);
+    updateEntry('activities', updatedActivities);
+
+    // 3. ✨ Auto-save this change immediately
+    saveEntry(true, { ...currentEntry, activities: updatedActivities });
   };
 
   const handleGeneralPhotoUpload = async (e) => {
@@ -755,8 +767,21 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
   };
   
   const deleteGeneralPhoto = async (photoId) => {
-    try { await deletePhotoBlob(photoId); } catch {}
-    updateEntry('photos', (currentEntry.photos || []).filter(p => p.id !== photoId));
+    // 1. Delete the photo file from the offline database
+    try {
+      await deletePhotoBlob(photoId);
+    } catch (err) {
+      console.error("Failed to delete photo blob:", err);
+      alert("Error: Could not delete the photo file. Please try again.");
+      return; // Stop if the file can't be deleted
+    }
+
+    // 2. Remove the photo's metadata from the current entry
+    const updatedPhotos = (currentEntry.photos || []).filter(p => p.id !== photoId);
+    updateEntry('photos', updatedPhotos);
+
+    // 3. ✨ Auto-save this change immediately
+    saveEntry(true, { ...currentEntry, photos: updatedPhotos });
   };
 
 
@@ -781,13 +806,13 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     }
   }
 
-  const saveEntry = () => {
+  const saveEntry = (isAutoSave = false, updatedEntry) => {
     const existingEntryIndex = savedEntries.findIndex(e => e.date === selectedDate);
     const isUpdate = existingEntryIndex >= 0;
 
     // IMPORTANT: Only store photo metadata (id, caption) in localStorage
     const entryToSave = {
-      ...currentEntry, // Contains weather, food, summary, etc.
+      ...(updatedEntry || currentEntry), // Use the updated entry if provided for auto-save
       date: selectedDate,
       dayInfo: currentDay,
       id: isUpdate ? savedEntries[existingEntryIndex].id : Date.now(),
@@ -810,13 +835,15 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     try {
       localStorage.setItem(key, payload);
       setSavedEntries(next);
-      setShowSuccessMessage(isUpdate ? 'updated' : 'saved');
-      setTimeout(() => setShowSuccessMessage(''), 3000);
+      if (!isAutoSave) {
+        setShowSuccessMessage(isUpdate ? 'updated' : 'saved');
+        setTimeout(() => setShowSuccessMessage(''), 3000);
 
-      if (!isUpdate) {
-        const i = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
-        if (i < cruiseDetails.itinerary.length - 1) {
-          setSelectedDate(cruiseDetails.itinerary[i + 1].date);
+        if (!isUpdate) {
+          const i = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
+          if (i < cruiseDetails.itinerary.length - 1) {
+            setSelectedDate(cruiseDetails.itinerary[i + 1].date);
+          }
         }
       }
     } catch (err) {
@@ -1089,7 +1116,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
           </button>
 
           <button
-            onClick={saveEntry}
+            onClick={() => saveEntry()}
             className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold py-3 px-4 rounded-lg shadow-lg transform hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
           >
             {savedEntries.some(e => e.date === selectedDate) ? 'Update' : 'Save'}
@@ -1114,7 +1141,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
         <div className="rounded-2xl bg-gradient-to-br from-slate-800/90 to-slate-900/90 p-8 border border-slate-700/50 shadow-2xl">
           <h3 className="text-2xl font-bold text-white mb-4">Saved Entries ({savedEntries.length})</h3>
           <div className="space-y-3">
-          {[...savedEntries].sort((a, b) => a.date.localeCompare(b.date)).map((entry) => (
+            {[...savedEntries].sort((a, b) => a.date.localeCompare(b.date)).map((entry) => (
               <div
                 key={entry.id}
                 onClick={() => setSelectedDate(entry.date)}
