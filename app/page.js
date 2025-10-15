@@ -1116,12 +1116,21 @@ function downloadBlob(blob, filename) {
 }
 
 function PhotoZipExport({ allCruises }) {
-  const [cruiseId, setCruiseId] = useState(() => {
-    const active = localStorage.getItem('activeCruiseId');
-    return active || (allCruises[0]?.id ?? '');
-  });
+  const [cruiseId, setCruiseId] = useState('');
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
+
+  // Set initial cruiseId on the client only
+  useEffect(() => {
+    let initial = allCruises[0]?.id ?? '';
+    try {
+      if (typeof window !== 'undefined') {
+        const active = localStorage.getItem('activeCruiseId');
+        if (active) initial = active;
+      }
+    } catch {}
+    setCruiseId(initial);
+  }, [allCruises]);
 
   const cruise = useMemo(() => allCruises.find(c => c.id === cruiseId) || null, [allCruises, cruiseId]);
 
@@ -1211,6 +1220,7 @@ function PhotoZipExport({ allCruises }) {
     </div>
   );
 }
+
 
 /* ============= Main component ============= */
 export default function HomePage() {
@@ -1359,7 +1369,8 @@ export default function HomePage() {
       <style jsx>{`
         @keyframes gradient { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
         .animate-gradient { background-size: 200% auto; animation: gradient 3s ease infinite; }
-        @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slide-in { from { transform: translateX(100%); opacity: 0;
+         } to { transform: translateX(0); opacity: 1; } }
         .animate-slide-in { animation: slide-in 0.3s ease-out; }
         @keyframes slide-down { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .animate-slide-down { animation: slide-down 0.5s ease-out; }
@@ -1367,3 +1378,4 @@ export default function HomePage() {
     </main>
   );
 }
+
