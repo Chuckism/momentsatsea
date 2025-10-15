@@ -2,28 +2,130 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
   <title>Offline – MomentsAtSea</title>
   <style>
     :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
     body {
-      margin: 0; font: 16px/1.5 -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
-      background: #0b1220; color: #dbeafe; display: grid; place-items: center; min-height: 100dvh;
+      margin: 0;
+      font: 16px/1.5 -apple-system, system-ui, Segoe UI, Roboto, sans-serif;
+      background: #0b1220;
+      color: #dbeafe;
+      min-height: 100dvh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
     }
     .card {
-      max-width: 28rem; padding: 1.25rem 1.5rem; border-radius: 0.75rem;
-      background: rgba(30,41,59,.6); border: 1px solid rgba(51,65,85,.6);
+      width: 100%;
+      max-width: 28rem;
+      padding: 1.25rem 1.5rem;
+      border-radius: 0.75rem;
+      background: rgba(30,41,59,.6);
+      border: 1px solid rgba(51,65,85,.6);
+      box-shadow: 0 10px 30px rgba(0,0,0,.3);
     }
     h1 { margin: 0 0 .5rem; font-size: 1.25rem; }
     p { margin: .25rem 0; color: #9fb3c8; }
     .hint { margin-top: .75rem; font-size: .9rem; color: #93c5fd; }
+    .actions {
+      margin-top: 1rem;
+      display: flex;
+      gap: .5rem;
+      flex-wrap: wrap;
+    }
+    button, a.btn {
+      appearance: none;
+      border: 0;
+      border-radius: .6rem;
+      padding: .65rem 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform .08s ease, opacity .15s ease;
+    }
+    button:active, a.btn:active { transform: translateY(1px); }
+    .primary {
+      background: linear-gradient(90deg,#2563eb,#06b6d4);
+      color: white;
+    }
+    .secondary {
+      background: rgba(51,65,85,.7);
+      color: #dbeafe;
+      border: 1px solid rgba(71,85,105,.7);
+    }
+    .status {
+      margin-top: .75rem;
+      font-size: .85rem;
+      color: #94a3b8;
+    }
+    .dot {
+      display: inline-block;
+      width: .5rem; height: .5rem;
+      border-radius: 999px;
+      background: #ef4444;
+      vertical-align: middle;
+      margin-right: .4rem;
+    }
+    .dot.online { background: #22c55e; }
   </style>
 </head>
 <body>
-  <div class="card">
+  <div class="card" role="status" aria-live="polite">
     <h1>You're offline</h1>
-    <p>The app UI still works offline. Pages that weren’t opened before may not be available.</p>
+    <p>The app works offline, but pages you haven’t opened before may not be cached yet.</p>
     <p class="hint">Tip: open your cruise and a few journal days while online to cache them.</p>
+
+    <div class="actions">
+      <button class="primary" id="retry">Try again</button>
+      <a href="/" class="btn secondary" id="openApp" rel="nofollow">Open app</a>
+    </div>
+
+    <div class="status">
+      <span class="dot" id="netDot" aria-hidden="true"></span>
+      <span id="netText">No connection</span>
+    </div>
   </div>
+
+  <script>
+    (function () {
+      const startUrl = '/';
+      const retryBtn = document.getElementById('retry');
+      const netDot = document.getElementById('netDot');
+      const netText = document.getElementById('netText');
+
+      function updateStatus() {
+        const online = navigator.onLine;
+        netDot.classList.toggle('online', online);
+        netText.textContent = online ? 'Back online — opening app…' : 'No connection';
+      }
+
+      function openIfOnline() {
+        if (navigator.onLine) {
+          // Prefer navigating to the PWA shell
+          window.location.href = startUrl;
+        }
+      }
+
+      retryBtn.addEventListener('click', function () {
+        // A normal reload will try network; if still offline the SW will serve this page again
+        window.location.reload();
+      });
+
+      window.addEventListener('online', () => { updateStatus(); openIfOnline(); });
+      window.addEventListener('offline', updateStatus);
+
+      // Initial paint
+      updateStatus();
+      if (navigator.onLine) {
+        // Small delay to let the SW settle before redirect
+        setTimeout(openIfOnline, 150);
+      }
+    })();
+  </script>
 </body>
 </html>
+
