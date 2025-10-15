@@ -14,6 +14,8 @@ export const metadata = {
     { media: "(prefers-color-scheme: light)", color: "#1e3a8a" },
     { media: "(prefers-color-scheme: dark)", color: "#0b1220" },
   ],
+  // Optional: ensures native controls & scrollbars match the user’s scheme
+  colorScheme: "dark light",
   appleWebApp: {
     capable: true,
     title: "MomentsAtSea",
@@ -26,7 +28,6 @@ export const metadata = {
     maximumScale: 1,
   },
   icons: {
-    // These files must exist in /public
     icon: [
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },

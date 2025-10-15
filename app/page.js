@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { zipSync, strToU8 } from 'fflate';
+import OrderSheet from "./components/OrderSheet";
 
 /* =========================
    IndexedDB: Offline Photos
@@ -594,7 +595,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
   async function processAndStoreFiles(files, cruiseId) {
     const out = [];
     for (const raw of files) {
-      const file = await normalizePhotoFile(raw);
+      const file = await normalizePhotoFile(raw); // downscale/convert if useful
       const id = makeId();
       const buf = await file.arrayBuffer();
       await putPhoto({ id, cruiseId, arrayBuffer: buf, type: file.type, caption: '' });
@@ -1221,15 +1222,16 @@ function PhotoZipExport({ allCruises }) {
   );
 }
 
-
 /* ============= Main component ============= */
 export default function HomePage() {
   const [appState, setAppState] = useState('cruises-list');
   const [allCruises, setAllCruises] = useState([]);
   const [activeCruiseId, setActiveCruiseId] = useState(null);
+  const [showOrderSheet, setShowOrderSheet] = useState(false);
   const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
 
   useEffect(() => {
+    // Request persistent storage where supported (helps Android/Chrome keep data)
     if (navigator.storage?.persist) navigator.storage.persist();
 
     const stored = localStorage.getItem('allCruises');
@@ -1310,22 +1312,45 @@ export default function HomePage() {
 
       <div className="relative z-10 flex flex-col items-center justify-start p-6 sm:p-8 md:p-12 overflow-x-hidden">
         <div className="w-full max-w-3xl overflow-x-hidden">
+          {/* HEADER */}
           <div className="text-center mb-12 space-y-2">
             {appState !== 'cruises-list' && (
               <button
                 type="button"
-                onClick={() => { if (confirm('Return to cruise library? Any unsaved changes will be lost.')) {
-                  setAppState('cruises-list'); setActiveCruiseId(null); localStorage.removeItem('activeCruiseId');
-                }}}
+                onClick={() => {
+                  if (confirm('Return to cruise library? Any unsaved changes will be lost.')) {
+                    setAppState('cruises-list');
+                    setActiveCruiseId(null);
+                    localStorage.removeItem('activeCruiseId');
+                  }
+                }}
                 className="mb-4 text-slate-400 hover:text-white transition-colors flex items-center gap-2 mx-auto"
               >
                 <span>←</span> Back to My Cruises
               </button>
             )}
-            <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">MomentsAtSea</h1>
-            <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
+
+            <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">
+              MomentsAtSea
+            </h1>
+
+            <p className="text-slate-400 text-lg">
+              Your cruise memories, beautifully preserved
+            </p>
+
+            {/* Create Keepsakes button */}
+            <div className="mt-4 flex justify-center">
+              <button
+                type="button"
+                onClick={() => setShowOrderSheet(true)}
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold px-5 py-3 rounded-xl shadow-lg"
+              >
+                Create Keepsakes
+              </button>
+            </div>
           </div>
 
+          {/* main content by state */}
           {appState === 'cruises-list' ? (
             <>
               <CruisesLibrary
@@ -1375,7 +1400,8 @@ export default function HomePage() {
         @keyframes slide-down { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .animate-slide-down { animation: slide-down 0.5s ease-out; }
       `}</style>
+
+      <OrderSheet open={showOrderSheet} onClose={() => setShowOrderSheet(false)} />
     </main>
   );
 }
-
