@@ -26,13 +26,13 @@ export const metadata = {
   },
   icons: {
     icon: [
-      { url: "/icons/icon-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/icon-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: "/icons/icon-192.png",
-    other: [{ rel: "mask-icon", url: "/icons/maskable-512.png", color: "#1e3a8a" }],
+    apple: "/icon-192.png",
+    other: [{ rel: "mask-icon", url: "/icon-512.png", color: "#1e3a8a" }],
   },
-};
+  
 
 // ✅ Correct paths (folder is "components", not "_components")
 import SWClient from "./components/SWClient";
