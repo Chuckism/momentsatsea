@@ -1,3 +1,4 @@
+// app/layout.js
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -11,7 +12,7 @@ export const metadata = {
   manifest: "/manifest.webmanifest",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#1e3a8a" },
-    { media: "(prefers-color-scheme: dark)",  color: "#0b1220" },
+    { media: "(prefers-color-scheme: dark)", color: "#0b1220" },
   ],
   appleWebApp: {
     capable: true,
@@ -25,16 +26,16 @@ export const metadata = {
     maximumScale: 1,
   },
   icons: {
+    // These files must exist in /public
     icon: [
       { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: "/icon-192.png",
-    other: [{ rel: "mask-icon", url: "/icon-512.png", color: "#1e3a8a" }],
   },
-  
+};
 
-// ✅ Correct paths (folder is "components", not "_components")
+// Client components mounted globally
 import SWClient from "./components/SWClient";
 import A2HSClient from "./components/A2HSClient";
 
@@ -43,7 +44,6 @@ export default function RootLayout({ children }) {
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
-        {/* Mount the tiny clients: SW registration + iOS A2HS helper */}
         <SWClient />
         <A2HSClient />
       </body>
