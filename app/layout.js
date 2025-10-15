@@ -8,7 +8,7 @@ export const metadata = {
   applicationName: "MomentsAtSea",
   title: "MomentsAtSea",
   description: "Your cruise memories, beautifully preserved",
-  manifest: "/manifest.webmanifest", // keep this if you've created it per Step 4
+  manifest: "/manifest.webmanifest",
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#1e3a8a" },
     { media: "(prefers-color-scheme: dark)",  color: "#0b1220" },
@@ -34,19 +34,19 @@ export const metadata = {
   },
 };
 
-// ⬇️ Mount the tiny clients
-import SWClient from "./_components/SWClient";
-import A2HSClient from "./_components/A2HSClient";
+// ✅ Correct paths (folder is "components", not "_components")
+import SWClient from "./components/SWClient";
+import A2HSClient from "./components/A2HSClient";
 
 export default function RootLayout({ children }) {
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
         {children}
+        {/* Mount the tiny clients: SW registration + iOS A2HS helper */}
         <SWClient />
         <A2HSClient />
       </body>
     </html>
   );
 }
-
