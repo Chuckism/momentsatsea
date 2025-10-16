@@ -1342,7 +1342,12 @@ export default function HomePage() {
     <button
       type="button"
       onClick={() => setShowOrderPicker(true)}
-      className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold px-5 py-3 rounded-xl shadow-lg"
+      className="bg-gradient-to-r from-amber-500 to-orange-500
+      hover:from-amber-600 hover:to-orange-600
+      text-white font-bold px-5 py-3 rounded-xl
+      shadow-lg shadow-amber-500/25 ring-2 ring-amber-300/40
+      focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900
+      transform hover:scale-[1.02] transition-all"      
     >
       Create Keepsakes
     </button>
