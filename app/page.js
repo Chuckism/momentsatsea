@@ -1,5 +1,5 @@
 'use client';
-
+// build: 2025-10-16T12:00-0500
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { zipSync, strToU8 } from 'fflate';
@@ -81,25 +81,23 @@ function makeId() {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
   return String(Date.now()) + '-' + Math.random().toString(16).slice(2);
 }
-function isSafari() {
-  const ua = navigator.userAgent;
-  return /^((?!chrome|android).)*safari/i.test(ua);
-}
 function supportsWebP() {
   try {
     const c = document.createElement('canvas');
     return c.toDataURL('image/webp').startsWith('data:image/webp');
   } catch { return false; }
 }
+// Treat a cruise as finished if status === 'finished' or legacy 'complete', or it has a finishedAt timestamp.
+const isCruiseFinished = (c) =>
+  c?.status === 'finished' || c?.status === 'complete' || !!c?.finishedAt;
 
 /** Downscale & convert large images to save space; convert HEIC if needed */
 async function normalizePhotoFile(inputFile, { maxDim = 2000 } = {}) {
   const isHEIC = /image\/heic|image\/heif/i.test(inputFile.type);
   const canCreateBitmap = 'createImageBitmap' in window;
 
-  // If not HEIC and small enough, keep as-is
   if (!isHEIC && inputFile.size <= 1.5 * 1024 * 1024) return inputFile;
-  if (!canCreateBitmap) return inputFile; // fallback
+  if (!canCreateBitmap) return inputFile;
 
   try {
     const bitmap = await createImageBitmap(inputFile);
@@ -247,7 +245,7 @@ function useStorageEstimate() {
 /* ===================
    Cruises Library UI
    =================== */
-function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise }) {
+function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise, onOpenOrder }) {
   const activeCruises = cruises.filter(c => c.status === 'active');
   const finishedCruises = cruises.filter(c => c.status === 'finished');
 
@@ -269,6 +267,7 @@ function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise })
       >
         <Trash2 className="w-5 h-5" />
       </button>
+
       <div className="flex items-start gap-4">
         <div className="flex-shrink-0 w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
           <Ship className="w-6 h-6 text-white" />
@@ -285,6 +284,18 @@ function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise })
               <span className="bg-blue-600/20 text-blue-400 px-2 py-1 rounded">● Active</span>
             ) : null}
           </div>
+
+          {isCruiseFinished(cruise) && (
+            <div className="mt-4">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenOrder?.(cruise); }}
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-semibold px-4 py-2 rounded-lg shadow"
+              >
+                Create Keepsakes
+              </button>
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -375,8 +386,6 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
       setShowInstallPrompt(false);
     }
   };
-
-  const handleBasicChange = (field, value) => onDetailsChange({ [field]: value });
 
   const generateItinerary = () => {
     if (!cruiseDetails.departureDate || !cruiseDetails.returnDate) return alert('Please enter departure and return dates');
@@ -505,7 +514,7 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
                         <option value="disembarkation">Disembark</option>
                       </select>
                       <div className="pointer-events-none absolute right-3 top-1/2 mt-2 text-slate-400">
-                        <ChevronDown className="h-5 w-5" />
+                        <ChevronDown className="h-5 h-5" />
                       </div>
                     </div>
                     {(day.type === 'port' || day.type === 'embarkation' || day.type === 'disembarkation') && (
@@ -595,7 +604,7 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
   async function processAndStoreFiles(files, cruiseId) {
     const out = [];
     for (const raw of files) {
-      const file = await normalizePhotoFile(raw); // downscale/convert if useful
+      const file = await normalizePhotoFile(raw);
       const id = makeId();
       const buf = await file.arrayBuffer();
       await putPhoto({ id, cruiseId, arrayBuffer: buf, type: file.type, caption: '' });
@@ -1054,11 +1063,6 @@ function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppSta
 }
 
 /* ====================== Photo ZIP Export (per-cruise) ====================== */
-/*
-  Creates a ZIP containing:
-  - /photos/<photoId>.<ext>  (all IndexedDB photo blobs for the selected cruise)
-  - /manifest.json           (captions & minimal metadata from localStorage)
-*/
 async function getAllPhotosForCruise(cruiseId) {
   const db = await openPhotoDB();
   return new Promise((resolve, reject) => {
@@ -1076,7 +1080,6 @@ async function getAllPhotosForCruise(cruiseId) {
   });
 }
 
-// Build a caption map from journal entries (in localStorage)
 function buildCaptionMapFromEntries(cruiseId) {
   try {
     const raw = localStorage.getItem(`cruiseJournalEntries_${cruiseId}`);
@@ -1121,7 +1124,6 @@ function PhotoZipExport({ allCruises }) {
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState('');
 
-  // Set initial cruiseId on the client only
   useEffect(() => {
     let initial = allCruises[0]?.id ?? '';
     try {
@@ -1227,11 +1229,14 @@ export default function HomePage() {
   const [appState, setAppState] = useState('cruises-list');
   const [allCruises, setAllCruises] = useState([]);
   const [activeCruiseId, setActiveCruiseId] = useState(null);
-  const [showOrderSheet, setShowOrderSheet] = useState(false);
-  const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
+
+  // NEW: store the whole cruise object for ordering, not just an id
+  const [orderCruise, setOrderCruise] = useState(null);
+  // Header button -> simple chooser for finished cruises
+  const [showOrderPicker, setShowOrderPicker] = useState(false);
+  const finishedCruises = useMemo(() => allCruises.filter(isCruiseFinished), [allCruises]);
 
   useEffect(() => {
-    // Request persistent storage where supported (helps Android/Chrome keep data)
     if (navigator.storage?.persist) navigator.storage.persist();
 
     const stored = localStorage.getItem('allCruises');
@@ -1248,6 +1253,7 @@ export default function HomePage() {
     }
   }, []);
 
+  const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
   const handleDetailsChange = (updates) => setCruiseDetails(prev => ({ ...prev, ...updates }));
 
   const handleSaveSetup = (itinerary) => {
@@ -1274,6 +1280,10 @@ export default function HomePage() {
     localStorage.removeItem('activeCruiseId');
     setActiveCruiseId(null);
     setAppState('cruises-list');
+
+    // Optionally auto-open order sheet for the just-finished cruise
+    // const justFinished = updatedCruises.find(c => c.id === activeCruiseId);
+    // if (justFinished) setOrderCruise(justFinished);
   };
 
   const handleSelectCruise = (cruiseId) => {
@@ -1312,45 +1322,33 @@ export default function HomePage() {
 
       <div className="relative z-10 flex flex-col items-center justify-start p-6 sm:p-8 md:p-12 overflow-x-hidden">
         <div className="w-full max-w-3xl overflow-x-hidden">
-          {/* HEADER */}
           <div className="text-center mb-12 space-y-2">
             {appState !== 'cruises-list' && (
               <button
                 type="button"
-                onClick={() => {
-                  if (confirm('Return to cruise library? Any unsaved changes will be lost.')) {
-                    setAppState('cruises-list');
-                    setActiveCruiseId(null);
-                    localStorage.removeItem('activeCruiseId');
-                  }
-                }}
+                onClick={() => { if (confirm('Return to cruise library? Any unsaved changes will be lost.')) {
+                  setAppState('cruises-list'); setActiveCruiseId(null); localStorage.removeItem('activeCruiseId');
+                }}}
                 className="mb-4 text-slate-400 hover:text-white transition-colors flex items-center gap-2 mx-auto"
               >
                 <span>←</span> Back to My Cruises
               </button>
             )}
-
-            <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">
-              MomentsAtSea
-            </h1>
-
-            <p className="text-slate-400 text-lg">
-              Your cruise memories, beautifully preserved
-            </p>
-
-            {/* Create Keepsakes button */}
-            <div className="mt-4 flex justify-center">
-              <button
-                type="button"
-                onClick={() => setShowOrderSheet(true)}
-                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold px-5 py-3 rounded-xl shadow-lg"
-              >
-                Create Keepsakes
-              </button>
-            </div>
+            <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">MomentsAtSea</h1>
+            <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
           </div>
+          {finishedCruises.length > 0 && appState === 'cruises-list' && (
+  <div className="mt-4 flex justify-center">
+    <button
+      type="button"
+      onClick={() => setShowOrderPicker(true)}
+      className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold px-5 py-3 rounded-xl shadow-lg"
+    >
+      Create Keepsakes
+    </button>
+  </div>
+)}
 
-          {/* main content by state */}
           {appState === 'cruises-list' ? (
             <>
               <CruisesLibrary
@@ -1358,6 +1356,7 @@ export default function HomePage() {
                 onSelectCruise={handleSelectCruise}
                 onStartNew={handleStartNewCruise}
                 onDeleteCruise={handleDeleteCruise}
+                onOpenOrder={(cruise) => setOrderCruise(cruise)}
               />
               <BackupRestore
                 allCruises={allCruises}
@@ -1368,7 +1367,7 @@ export default function HomePage() {
               <PhotoZipExport allCruises={allCruises} />
             </>
           ) : appState === 'setup' ? (
-            <CruiseSetup onSave={handleSaveSetup} cruiseDetails={cruiseDetails} onDetailsChange={handleDetailsChange} />
+            <CruiseSetup onSave={handleSaveSetup} cruiseDetails={cruiseDetails} onDetailsChange={(u) => setCruiseDetails(prev => ({ ...prev, ...u }))} />
           ) : (
             <DailyJournal cruiseDetails={cruiseDetails} onFinishCruise={handleFinishCruise} />
           )}
@@ -1394,14 +1393,60 @@ export default function HomePage() {
       <style jsx>{`
         @keyframes gradient { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
         .animate-gradient { background-size: 200% auto; animation: gradient 3s ease infinite; }
-        @keyframes slide-in { from { transform: translateX(100%); opacity: 0;
-         } to { transform: translateX(0); opacity: 1; } }
+        @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         .animate-slide-in { animation: slide-in 0.3s ease-out; }
         @keyframes slide-down { from { transform: translateY(-20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .animate-slide-down { animation: slide-down 0.5s ease-out; }
       `}</style>
 
-      <OrderSheet open={showOrderSheet} onClose={() => setShowOrderSheet(false)} />
+      {/* Order sheet tied to the selected (finished) cruise */}
+      {/* Header button -> choose which finished cruise to order */}
+{showOrderPicker && (
+  <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 p-4">
+    <div className="w-full max-w-md bg-slate-900 rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-700/60">
+        <div className="text-sm uppercase tracking-wider text-slate-400">Create Keepsakes</div>
+        <div className="text-xl font-bold text-white">Choose a finished cruise</div>
+      </div>
+
+      <div className="p-5 space-y-3 max-h-[60vh] overflow-auto">
+        {finishedCruises.map((c) => (
+          <button
+            key={c.id}
+            onClick={() => { setOrderCruise(c); setShowOrderPicker(false); }}
+            className="w-full text-left bg-slate-800/40 hover:bg-slate-800/70 border border-slate-700/60 hover:border-slate-600/70 rounded-xl px-4 py-3 transition-colors"
+          >
+            <div className="font-semibold text-white">
+              {(c.homePort?.split(',')[0] || 'Cruise')} Adventure
+            </div>
+            <div className="text-slate-400 text-sm">
+              {(c.departureDate || '—')} – {(c.returnDate || '—')}
+            </div>
+          </button>
+        ))}
+        {finishedCruises.length === 0 && (
+          <div className="text-slate-400 text-sm">No finished cruises yet.</div>
+        )}
+      </div>
+
+      <div className="px-5 py-4 border-t border-slate-700/60 flex justify-end">
+        <button
+          type="button"
+          onClick={() => setShowOrderPicker(false)}
+          className="bg-slate-700 hover:bg-slate-600 text-white font-semibold px-4 py-2 rounded-lg"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+      <OrderSheet
+        open={!!orderCruise}
+        onClose={() => setOrderCruise(null)}
+        cruise={orderCruise}
+      />
     </main>
   );
 }
