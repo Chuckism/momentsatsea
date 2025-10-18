@@ -246,8 +246,9 @@ function useStorageEstimate() {
    Cruises Library UI
    =================== */
 function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise, onOpenOrder }) {
-  const activeCruises = cruises.filter(c => c.status === 'active');
-  const finishedCruises = cruises.filter(c => c.status === 'finished');
+  const activeCruises = cruises.filter(c => !isCruiseFinished(c));
+const finishedCruises = cruises.filter(isCruiseFinished);
+
 
   const formatDateRange = (departure, returnDate) => {
     if (!departure || !returnDate) return 'Dates not set';
@@ -1274,17 +1275,31 @@ export default function HomePage() {
   };
 
   const handleFinishCruise = () => {
-    const updatedCruises = allCruises.map(c => c.id === activeCruiseId ? { ...c, status:'finished', finishedAt: new Date().toISOString() } : c);
+    // 1) Mark the active cruise as finished (and timestamp it)
+    const updatedCruises = allCruises.map(c =>
+      c.id === activeCruiseId
+        ? { ...c, status: 'finished', finishedAt: new Date().toISOString() }
+        : c
+    );
+  
+    // 2) Capture the cruise we just finished (BEFORE we clear activeCruiseId)
+    const justFinished = updatedCruises.find(c => c.id === activeCruiseId) || null;
+  
+    // 3) Save changes and return to the library
     setAllCruises(updatedCruises);
     localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
+  
     localStorage.removeItem('activeCruiseId');
     setActiveCruiseId(null);
     setAppState('cruises-list');
-
-    // Optionally auto-open order sheet for the just-finished cruise
-    // const justFinished = updatedCruises.find(c => c.id === activeCruiseId);
-    // if (justFinished) setOrderCruise(justFinished);
+  
+    // 4) Auto-open the OrderSheet for that finished cruise
+    //    setTimeout lets the UI switch back to the library first, then shows the sheet.
+    if (justFinished) {
+      setTimeout(() => setOrderCruise(justFinished), 0);
+    }
   };
+  
 
   const handleSelectCruise = (cruiseId) => {
     const cruise = allCruises.find(c => c.id === cruiseId);
@@ -1337,17 +1352,7 @@ export default function HomePage() {
             <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">MomentsAtSea</h1>
             <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
           </div>
-          {finishedCruises.length > 0 && appState === 'cruises-list' && (
-  <div className="mt-4 flex justify-center">
-    <button
-      type="button"
-      onClick={() => setShowOrderPicker(true)}
-      className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-amber-500/25 ring-2 ring-amber-300/40 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transform hover:scale-[1.02] transition-all"
-    >
-      Create Keepsakes
-    </button>
-  </div>
-)}
+          
 
           {appState === 'cruises-list' ? (
             <>
