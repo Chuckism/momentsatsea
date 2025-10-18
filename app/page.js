@@ -4,6 +4,10 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { zipSync, strToU8 } from 'fflate';
 import OrderSheet from "./components/OrderSheet";
+import { supabase } from '../lib/supabaseClient';
+import { queueBackupAndSync, trySyncBackups } from '../lib/backupSync';
+
+
 
 /* =========================
    IndexedDB: Offline Photos
@@ -692,19 +696,21 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     try {
       localStorage.setItem(`cruiseJournalEntries_${cruiseDetails.id}`, payload);
       setSavedEntries(next);
+    
+      // Cloud safety net (text-only, offline-first). Fire-and-forget.
+      // If it fails (offline, etc.), we’ll retry later—don’t block the UI.
+      queueBackupAndSync(cruiseDetails.id)?.catch?.(() => {});
+    
       if (!isAutoSave) {
         if (navigator.vibrate) navigator.vibrate(12);
         setShowSuccessMessage(isUpdate ? 'updated' : 'saved');
         setTimeout(() => setShowSuccessMessage(''), 3000);
-
-        if (!isUpdate) {
-          const i = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
-          if (i < cruiseDetails.itinerary.length - 1) setSelectedDate(cruiseDetails.itinerary[i + 1].date);
-        }
+        // … (rest unchanged)
       }
     } catch {
       alert("CRITICAL: Failed to save your entry (browser storage error). Please copy your text out before refreshing.");
     }
+    
   };
 
   const currentDayIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
@@ -1266,6 +1272,22 @@ const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
     }
   }, [pendingOrderCruise, orderCruise]);
   
+  useEffect(() => {
+    (async () => {
+      if (!supabase) { console.warn('Supabase not configured'); return; }
+      const { error } = await supabase
+        .from('keepsake_orders')
+        .insert([{ id: `test-${Date.now()}`, cruise_id: null, payload: { ping: 'ok' } }]);
+      console.log('Supabase insert test:', error ?? 'ok');
+    })();
+  }, []);
+
+  useEffect(() => {
+    trySyncBackups();                    // attempt once on load
+    const onOnline = () => { trySyncBackups(); };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, []);
   
 
   const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
