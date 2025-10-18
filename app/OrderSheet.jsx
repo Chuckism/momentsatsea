@@ -25,10 +25,17 @@ function formatUSD(cents) {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-export default function OrderSheet({ open, onClose }) {
+/**
+ * Props:
+ * - open: boolean
+ * - onClose: () => void
+ * - cruise: { id, homePort, departureDate, returnDate } | null
+ * - onSubmit?: (order) => Promise<void> | void   // optional (for Supabase/Stripe)
+ */
+export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
   const [selected, setSelected] = useState('bundle_masterpiece');
   const [removeWM, setRemoveWM] = useState(false);
-  const [status, setStatus] = useState('idle'); // idle | saving | done
+  const [status, setStatus] = useState('idle'); // idle | saving | done | error
   const [isOnline, setIsOnline] = useState(true);
 
   useEffect(() => {
@@ -40,24 +47,84 @@ export default function OrderSheet({ open, onClose }) {
   }, []);
 
   useEffect(() => {
-    if (!open) { setStatus('idle'); setSelected('bundle_masterpiece'); setRemoveWM(false); }
+    if (!open) {
+      setStatus('idle');
+      setSelected('bundle_masterpiece');
+      setRemoveWM(false);
+    }
   }, [open]);
 
   if (!open) return null;
 
   const chosen = PACKAGES.find(p => p.id === selected);
   const subtotal = chosen.price;
-  const wmAddon = removeWM
-    ? (selected === 'bundle_masterpiece' ? 2000 : 1000) // $20 for all bundle videos, $10 for a single video/PDF set
-    : 0;
+  const wmAddon = removeWM ? (selected === 'bundle_masterpiece' ? 2000 : 1000) : 0; // $20 bundle, $10 single
   const total = subtotal + wmAddon;
 
+  const queueLocalOrder = (order) => {
+    try {
+      const key = 'moments_orders_queue';
+      const prev = JSON.parse(localStorage.getItem(key) || '[]');
+      prev.push(order);
+      localStorage.setItem(key, JSON.stringify(prev));
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
   const startOrder = async () => {
+    if (!cruise?.id) {
+      // Guard: shouldn’t happen—UI only opens this when a finished cruise is chosen.
+      setStatus('error');
+      return;
+    }
     setStatus('saving');
-    // MOCK ONLY: pretend we save an order locally and “queue” it if offline
-    await new Promise(r => setTimeout(r, 900));
+
+    const order = {
+      id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
+      createdAt: new Date().toISOString(),
+      cruiseId: cruise.id,
+      cruiseSummary: {
+        homePort: cruise.homePort ?? null,
+        departureDate: cruise.departureDate ?? null,
+        returnDate: cruise.returnDate ?? null,
+      },
+      packageId: selected,
+      removeWatermark: removeWM,
+      lineItems: [
+        { sku: selected, amountCents: subtotal, qty: 1 },
+        ...(removeWM ? [{ sku: selected === 'bundle_masterpiece' ? 'wm_bundle' : 'wm_single', amountCents: wmAddon, qty: 1 }] : []),
+      ],
+      totalCents: total,
+      status: isOnline ? 'pending_payment' : 'queued_offline',
+      source: 'app_order_sheet_v1',
+    };
+
+    // Always queue locally first so offline users are safe.
+    const queued = queueLocalOrder(order);
+    if (!queued) {
+      setStatus('error');
+      return;
+    }
+
+    // Optional: try to hand it off to caller (e.g., Supabase/Stripe) when online
+    if (isOnline && typeof onSubmit === 'function') {
+      try {
+        await onSubmit(order);
+      } catch {
+        // Keep queued; caller can process later
+      }
+    }
+
     setStatus('done');
   };
+
+  const portName = (cruise?.homePort || '').split(',')[0] || 'Cruise';
+  const dateSpan =
+    cruise?.departureDate && cruise?.returnDate
+      ? `${cruise.departureDate} – ${cruise.returnDate}`
+      : 'Dates not set';
 
   return (
     <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/60 p-0 md:p-6">
@@ -66,6 +133,11 @@ export default function OrderSheet({ open, onClose }) {
           <div>
             <div className="text-sm uppercase tracking-wider text-slate-400">Transform Your Journal</div>
             <div className="text-xl font-bold text-white">Create Your Keepsakes</div>
+            {cruise && (
+              <div className="text-slate-400 text-xs mt-1">
+                For: <span className="text-slate-300 font-medium">{portName} Adventure</span> · <span>{dateSpan}</span>
+              </div>
+            )}
           </div>
           <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-white">
             <X className="w-6 h-6" />
@@ -126,7 +198,7 @@ export default function OrderSheet({ open, onClose }) {
                 <div>
                   <div className="font-semibold text-white">Remove watermark (+{formatUSD(selected==='bundle_masterpiece' ? 2000 : 1000)})</div>
                   <div className="text-sm text-slate-400">
-                    Default videos include an elegant, opaque “MomentsAtSea.com” mark. Remove it for a clean master.
+                    Default videos include a subtle “MomentsAtSea.com” mark. Remove it for a clean export.
                   </div>
                 </div>
                 <label className="inline-flex items-center gap-2 cursor-pointer select-none">
@@ -159,7 +231,7 @@ export default function OrderSheet({ open, onClose }) {
               onClick={startOrder}
               className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-3 rounded-xl shadow-lg transform hover:scale-[1.01] transition-all"
             >
-              {isOnline ? 'Finalize My Masterpiece' : 'Save Order (will process when online)'}
+              {isOnline ? 'Finalize My Masterpiece' : 'Save Order (works offline)'}
             </button>
           )}
 
@@ -174,12 +246,19 @@ export default function OrderSheet({ open, onClose }) {
               <div className="font-semibold mb-1">Your order is saved ✅</div>
               <div className="text-sm">
                 {isOnline
-                  ? 'This is a demo flow. In the real version, we’ll send you to payment and then start rendering your videos/PDF automatically.'
-                  : 'You’re offline—no problem. We’ll process this the next time you’re online.'}
+                  ? 'We saved your order. Next up: payment and rendering in the cloud.'
+                  : 'You’re offline—no problem. We’ll process this when you’re back online.'}
               </div>
-              <div className="mt-3">
+              <div className="mt-3 flex gap-2">
                 <button onClick={onClose} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg">Close</button>
               </div>
+            </div>
+          )}
+
+          {status === 'error' && (
+            <div className="rounded-xl border border-red-700/40 bg-red-900/20 p-4 text-red-200">
+              <div className="font-semibold mb-1">Couldn’t save your order.</div>
+              <div className="text-sm">Please try again, or pick a finished cruise first.</div>
             </div>
           )}
         </div>
