@@ -1,12 +1,16 @@
 'use client';
-// build: 2025-10-18T13:30-0500
+// build: 2025-10-18T00:00-0500
+
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { zipSync, strToU8 } from 'fflate';
-import OrderSheet from "./components/OrderSheet";
 
-// NEW: cloud backup safety-net
-import { queueBackupAndSync, trySyncBackups } from '../lib/backupSync';
+// UI components
+import OrderSheet from "./components/OrderSheet";
+import BackupRestore from "./components/BackupRestore";
+
+// Supabase backup (offline-first safety net)
+import { queueBackupAndSync } from "../lib/backupSync";
 
 /* =========================
    IndexedDB: Offline Photos
@@ -276,23 +280,22 @@ function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise, o
           <Ship className="w-6 h-6 text-white" />
         </div>
         <div className="flex-1">
-        <h3 className="text-xl font-bold text-white mb-1">
-  {cruise.label || `${cruise.homePort?.split(',')[0] || 'Cruise'} Adventure`}
-</h3>
+          <h3 className="text-xl font-bold text-white mb-1">
+            {cruise.label || `${cruise.homePort?.split(',')[0] || 'Cruise'} Adventure`}
+          </h3>
 
-{/* Subtle details line: Home port + date range */}
-<p className="text-slate-400 text-sm mb-2">
-  {cruise.homePort?.split(',')[0] || '—'}
-  {cruise.departureDate && cruise.returnDate ? (
-    <> &middot; {formatDateRange(cruise.departureDate, cruise.returnDate)}</>
-  ) : null}
-</p>
+          {/* Subtle details line */}
+          <div className="text-slate-400 text-sm mb-2">
+            {cruise.homePort?.split(',')[0] || '—'}
+            {cruise.departureDate && cruise.returnDate ? (
+              <> &middot; {formatDateRange(cruise.departureDate, cruise.returnDate)}</>
+            ) : null}
+          </div>
 
-          <p className="text-slate-400 text-sm mb-2">{formatDateRange(cruise.departureDate, cruise.returnDate)}</p>
           <div className="flex items-center gap-4 text-xs text-slate-500">
             <span>📍 {cruise.itinerary?.length || 0} days</span>
             <span>🏠 {cruise.homePort?.split(',')[0]}</span>
-            {cruise.status === 'finished' ? (
+            {isCruiseFinished(cruise) ? (
               <span className="bg-green-600/20 text-green-400 px-2 py-1 rounded">✓ Finished</span>
             ) : cruise.status === 'active' ? (
               <span className="bg-blue-600/20 text-blue-400 px-2 py-1 rounded">● Active</span>
@@ -704,11 +707,11 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     }
     try {
       localStorage.setItem(`cruiseJournalEntries_${cruiseDetails.id}`, payload);
+
+      // Cloud safety net (text-only, offline-first)
+      try { queueBackupAndSync(cruiseDetails.id); } catch {}
+
       setSavedEntries(next);
-
-      // Cloud safety net (text-only, offline-first). Fire-and-forget.
-      queueBackupAndSync(cruiseDetails.id)?.catch?.(() => {});
-
       if (!isAutoSave) {
         if (navigator.vibrate) navigator.vibrate(12);
         setShowSuccessMessage(isUpdate ? 'updated' : 'saved');
@@ -954,157 +957,8 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
 }
 
 /* ====================== Backup/Restore (device transfer) ====================== */
-function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppState }) {
-  const [busy, setBusy] = useState(false);
-  const fileRef = useRef(null);
+// (Photo ZIP export only; JSON backup UI now lives in components/BackupRestore.jsx)
 
-  const exportJSON = () => {
-    try {
-      const cruises = JSON.parse(localStorage.getItem('allCruises') || '[]');
-      const entriesByCruiseId = {};
-      for (const c of cruises) {
-        const key = `cruiseJournalEntries_${c.id}`;
-        const raw = localStorage.getItem(key);
-        if (raw) entriesByCruiseId[c.id] = JSON.parse(raw);
-      }
-      const payload = {
-        app: 'MomentsAtSea',
-        version: 1,
-        exportedAt: new Date().toISOString(),
-        allCruises: cruises,
-        entriesByCruiseId,
-        note: 'Photos are stored in IndexedDB and are not included in this JSON.',
-      };
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const y = new Date();
-      const yyyy = y.getFullYear();
-      const mm = String(y.getMonth() + 1).padStart(2, '0');
-      const dd = String(y.getDate()).padStart(2, '0');
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `momentsatsea-backup-${yyyy}${mm}${dd}.json`;
-      document.body.appendChild(a);
-      a.click();
-      URL.revokeObjectURL(a.href);
-      a.remove();
-    } catch (e) {
-      alert('Export failed. See console for details.');
-      console.error(e);
-    }
-  };
-
-  const importJSON = async (file) => {
-    if (!file) return;
-    setBusy(true);
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-
-      if (!data || data.app !== 'MomentsAtSea' || !Array.isArray(data.allCruises)) {
-        alert('This file does not look like a MomentsAtSea backup.');
-        return;
-      }
-
-      // Merge strategy: append new cruises, overwrite cruises with the same id.
-      const existing = JSON.parse(localStorage.getItem('allCruises') || '[]');
-      const byId = new Map(existing.map(c => [String(c.id), c]));
-      for (const c of data.allCruises) byId.set(String(c.id), c);
-      const merged = Array.from(byId.values());
-
-      // Write entries
-      const entriesByCruiseId = data.entriesByCruiseId || {};
-      for (const [cid, entries] of Object.entries(entriesByCruiseId)) {
-        localStorage.setItem(`cruiseJournalEntries_${cid}`, JSON.stringify(entries || []));
-      }
-
-      // Persist cruises list and refresh UI state
-      localStorage.setItem('allCruises', JSON.stringify(merged));
-      setAllCruises(merged);
-
-      // If there’s exactly one active cruise in the import, select it
-      const active = merged.find(c => c.status === 'active') || merged[0];
-      if (active) {
-        localStorage.setItem('activeCruiseId', active.id);
-        setActiveCruiseId?.(active.id);
-        setAppState?.('journaling');
-      }
-
-      alert('Import complete! (Photos are not included; only text/captions were imported.)');
-    } catch (e) {
-      alert('Import failed. See console for details.');
-      console.error(e);
-    } finally {
-      setBusy(false);
-      if (fileRef.current) fileRef.current.value = '';
-    }
-  };
-
-  return (
-    <div className="mt-6 rounded-xl bg-slate-800/40 border border-slate-700/60 p-4">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          {/* Title + subtitle */}
-          <div className="text-white font-semibold">Export Backup</div>
-          <div className="text-slate-400 text-sm">
-            Save your journal (text & captions) to a .json file. You can re-import it later.
-          </div>
-        </div>
-  
-        {/* Buttons */}
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={exportJSON}
-            className="bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          >
-            Export Backup (.json)
-          </button>
-  
-          <label className={`cursor-pointer ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
-            <span className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors inline-block">
-              Import Backup
-            </span>
-            <input
-              ref={fileRef}
-              type="file"
-              accept="application/json,.json"
-              className="hidden"
-              onChange={(e) => importJSON(e.target.files?.[0])}
-              disabled={busy}
-            />
-          </label>
-        </div>
-      </div>
-  
-      {/* Small footnotes */}
-      <div className="text-xs text-slate-500 mt-2">
-        Backups include your journal text and photo captions. Photos are stored on your device and are <em>not</em> in this backup.
-      </div>
-      <div className="text-xs text-slate-500">
-        To copy photos too, use <strong>Export Photos (.zip)</strong> below.
-      </div>
-    </div>
-  );
-  
-
-          {/* Optional manual cloud backup button */}
-          <button
-            type="button"
-            onClick={() => queueBackupAndSync()?.catch?.(()=>{})}
-            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
-          >
-            Backup to Cloud
-          </button>
-        </div>
-      </div>
-      <div className="text-xs text-slate-500 mt-2">
-        Photos are saved in device storage (IndexedDB) and aren’t included in the JSON. Use “Export ZIP” below for photos.
-      </div>
-    </div>
-  );
-}
-
-/* ====================== Photo ZIP Export (per-cruise) ====================== */
 async function getAllPhotosForCruise(cruiseId) {
   const db = await openPhotoDB();
   return new Promise((resolve, reject) => {
@@ -1205,11 +1059,12 @@ function PhotoZipExport({ allCruises }) {
           departureDate: cruise.departureDate,
           returnDate: cruise.returnDate,
           status: cruise.status,
+          label: cruise.label || null,
         },
         photoCount: photos.length,
         captions,
         exportedAt: new Date().toISOString(),
-        note: 'Text entries are not included here—use "Export JSON" for that.',
+        note: 'Text entries are not included here—use "Export Backup (.json)" for that.',
       };
       files['manifest.json'] = strToU8(JSON.stringify(manifest, null, 2));
 
@@ -1246,7 +1101,7 @@ function PhotoZipExport({ allCruises }) {
             {allCruises.length === 0 ? <option value="">No cruises</option> : null}
             {allCruises.map(c => (
               <option key={c.id} value={c.id}>
-                {(c.homePort?.split(',')[0] || 'Cruise')} · {c.departureDate || '—'}
+                {(c.label || c.homePort?.split(',')[0] || 'Cruise')} · {c.departureDate || '—'}
               </option>
             ))}
           </select>
@@ -1261,15 +1116,17 @@ function PhotoZipExport({ allCruises }) {
         </div>
       </div>
       {status ? <div className="text-xs text-slate-500 mt-2">{status}</div> : null}
-      <div className="text-xs text-slate-500 mt-2">Tip: use this along with “Export JSON” to move text + photos.</div>
+      <div className="text-xs text-slate-500 mt-2">Tip: use this along with “Export Backup (.json)” to move text + photos.</div>
     </div>
   );
 }
 
-function pad(n) { return String(n); } // simple; no leading zeros needed
+/* =======================
+   Label helpers (Chuck_1)
+   ======================= */
+function pad(n) { return String(n); } // simple
 
 function computeNextCruiseIndex(cruises, handle) {
-  // Count cruises already using this handle prefix
   const prefix = `${handle}_`;
   const existing = cruises
     .map(c => c?.label)
@@ -1295,18 +1152,13 @@ export default function HomePage() {
   const [allCruises, setAllCruises] = useState([]);
   const [activeCruiseId, setActiveCruiseId] = useState(null);
 
-  // Store the whole cruise object for ordering
+  // Store cruise we want to order (opens OrderSheet)
   const [orderCruise, setOrderCruise] = useState(null);
-  // Header button -> simple chooser for finished cruises
-  const [showOrderPicker, setShowOrderPicker] = useState(false);
-  const finishedCruises = useMemo(() => allCruises.filter(isCruiseFinished), [allCruises]);
-  // NEW: hold a cruise we want to open after returning to the library
+  // Hold a cruise to open after returning to the library (timing fix)
   const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
-  // A short handle used to auto-name cruises like "ChuckNealis_1"
-const [userHandle, setUserHandle] = useState(null);
 
+  const finishedCruises = useMemo(() => allCruises.filter(isCruiseFinished), [allCruises]);
 
-  // Persist permission & hydrate local state
   useEffect(() => {
     if (navigator.storage?.persist) navigator.storage.persist();
 
@@ -1324,43 +1176,30 @@ const [userHandle, setUserHandle] = useState(null);
     }
   }, []);
 
-  // NEW: auto-try to flush any queued backups on load and when coming online
+  // After switching back to the library, open OrderSheet if requested
   useEffect(() => {
-    trySyncBackups();
-    const onOnline = () => { trySyncBackups(); };
-    window.addEventListener('online', onOnline);
-    return () => window.removeEventListener('online', onOnline);
-  }, []);
-
-  useEffect(() => {
-    try {
-      let h = localStorage.getItem('userHandle');
-      if (!h && typeof window !== 'undefined') {
-        // Ask once. If user cancels, fall back to "Cruiser".
-        h = window.prompt('Pick a short handle for cruise names (e.g., ChuckNealis):') || 'Cruiser';
-        localStorage.setItem('userHandle', h);
-      }
-      setUserHandle(h || 'Cruiser');
-    } catch {
-      setUserHandle('Cruiser');
+    if (appState === 'cruises-list' && pendingOrderCruise) {
+      setOrderCruise(pendingOrderCruise);
+      setPendingOrderCruise(null);
     }
-  }, []);
-  
+  }, [appState, pendingOrderCruise]);
+
   const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
   const handleDetailsChange = (updates) => setCruiseDetails(prev => ({ ...prev, ...updates }));
 
   const handleSaveSetup = (itinerary) => {
-    const label = makeCruiseLabel(allCruises, userHandle || 'Cruiser');
-  
+    // Build a default label like Chuck_1 / Miami_1 etc.
+    const homeCity = (cruiseDetails.homePort || 'Cruise').split(',')[0].trim() || 'Cruise';
+    const handle = localStorage.getItem('userHandle') || homeCity;
+
     const newCruise = {
       ...cruiseDetails,
       itinerary: itinerary || cruiseDetails.itinerary,
       id: Date.now().toString(),
       createdAt: new Date().toISOString(),
       status: 'active',
-      label, // <-- NEW
+      label: makeCruiseLabel(allCruises, handle),
     };
-  
     const updatedCruises = [...allCruises, newCruise];
     setAllCruises(updatedCruises);
     setActiveCruiseId(newCruise.id);
@@ -1369,7 +1208,6 @@ const [userHandle, setUserHandle] = useState(null);
     setCruiseDetails(newCruise);
     setAppState('journaling');
   };
-  
 
   const handleStartNewCruise = () => {
     setCruiseDetails({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
@@ -1377,27 +1215,24 @@ const [userHandle, setUserHandle] = useState(null);
     setAppState('setup');
   };
 
-  // REPLACED: marks finished, backs up, then opens order sheet after switch
   const handleFinishCruise = () => {
+    // Mark as finished
     const updatedCruises = allCruises.map(c =>
       c.id === activeCruiseId
         ? { ...c, status: 'finished', finishedAt: new Date().toISOString() }
         : c
     );
 
-    // capture before clearing
+    // Capture the cruise we just finished (BEFORE clearing activeCruiseId)
     const justFinished = updatedCruises.find(c => c.id === activeCruiseId) || null;
 
-    // persist
+    // Save and return to library
     setAllCruises(updatedCruises);
     localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
     localStorage.removeItem('activeCruiseId');
     setActiveCruiseId(null);
 
-    // backup snapshot of text data (offline-first)
-    queueBackupAndSync(activeCruiseId)?.catch?.(()=>{});
-
-    // flag for opening order after we switch views
+    // Tell the UI to open OrderSheet AFTER it finishes switching views
     if (justFinished) setPendingOrderCruise(justFinished);
 
     setAppState('cruises-list');
@@ -1429,14 +1264,6 @@ const [userHandle, setUserHandle] = useState(null);
       }
     }
   };
-
-  // NEW: once back on library screen, open the order sheet if requested
-  useEffect(() => {
-    if (appState === 'cruises-list' && pendingOrderCruise) {
-      setOrderCruise(pendingOrderCruise);  // opens the OrderSheet
-      setPendingOrderCruise(null);         // clear the flag
-    }
-  }, [appState, pendingOrderCruise]);
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-x-hidden">
@@ -1514,47 +1341,6 @@ const [userHandle, setUserHandle] = useState(null);
       `}</style>
 
       {/* Order sheet tied to the selected (finished) cruise */}
-      {showOrderPicker && (
-        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 p-4">
-          <div className="w-full max-w-md bg-slate-900 rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden">
-            <div className="px-5 py-4 border-b border-slate-700/60">
-              <div className="text-sm uppercase tracking-wider text-slate-400">Create Keepsakes</div>
-              <div className="text-xl font-bold text-white">Choose a finished cruise</div>
-            </div>
-
-            <div className="p-5 space-y-3 max-h-[60vh] overflow-auto">
-              {finishedCruises.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => { setOrderCruise(c); setShowOrderPicker(false); }}
-                  className="w-full text-left bg-slate-800/40 hover:bg-slate-800/70 border border-slate-700/60 hover:border-slate-600/70 rounded-xl px-4 py-3 transition-colors"
-                >
-                  <div className="font-semibold text-white">
-                    {(c.homePort?.split(',')[0] || 'Cruise')} Adventure
-                  </div>
-                  <div className="text-slate-400 text-sm">
-                    {(c.departureDate || '—')} – {(c.returnDate || '—')}
-                  </div>
-                </button>
-              ))}
-              {finishedCruises.length === 0 && (
-                <div className="text-slate-400 text-sm">No finished cruises yet.</div>
-              )}
-            </div>
-
-            <div className="px-5 py-4 border-t border-slate-700/60 flex justify-end">
-              <button
-                type="button"
-                onClick={() => setShowOrderPicker(false)}
-                className="bg-slate-700 hover:bg-slate-600 text-white font-semibold px-4 py-2 rounded-lg"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <OrderSheet
         open={!!orderCruise}
         onClose={() => setOrderCruise(null)}
