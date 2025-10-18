@@ -8,6 +8,8 @@ import { zipSync, strToU8 } from 'fflate';
 // UI components
 import OrderSheet from "./components/OrderSheet";
 import BackupRestore from "./components/BackupRestore";
+import AuthSheet from "./components/AuthSheet";
+
 
 // Supabase backup (offline-first safety net)
 import { queueBackupAndSync } from "../lib/backupSync";
@@ -1156,6 +1158,8 @@ export default function HomePage() {
   const [orderCruise, setOrderCruise] = useState(null);
   // Hold a cruise to open after returning to the library (timing fix)
   const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
+  const [showAuth, setShowAuth] = useState(false);
+
 
   const finishedCruises = useMemo(() => allCruises.filter(isCruiseFinished), [allCruises]);
 
@@ -1274,21 +1278,43 @@ export default function HomePage() {
 
       <div className="relative z-10 flex flex-col items-center justify-start p-6 sm:p-8 md:p-12 overflow-x-hidden">
         <div className="w-full max-w-3xl overflow-x-hidden">
-          <div className="text-center mb-12 space-y-2">
-            {appState !== 'cruises-list' && (
-              <button
-                type="button"
-                onClick={() => { if (confirm('Return to cruise library? Any unsaved changes will be lost.')) {
-                  setAppState('cruises-list'); setActiveCruiseId(null); localStorage.removeItem('activeCruiseId');
-                }}}
-                className="mb-4 text-slate-400 hover:text-white transition-colors flex items-center gap-2 mx-auto"
-              >
-                <span>←</span> Back to My Cruises
-              </button>
-            )}
-            <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">MomentsAtSea</h1>
-            <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
-          </div>
+        <div className="text-center mb-12 space-y-2">
+  {/* Account button only on the library screen */}
+  {appState === 'cruises-list' && (
+    <div className="w-full flex justify-end mb-2">
+      <button
+        type="button"
+        onClick={() => setShowAuth(true)}
+        className="text-sm bg-slate-700/60 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg"
+      >
+        Account
+      </button>
+    </div>
+  )}
+
+  {/* Existing "Back to My Cruises" button — unchanged */}
+  {appState !== 'cruises-list' && (
+    <button
+      type="button"
+      onClick={() => {
+        if (confirm('Return to cruise library? Any unsaved changes will be lost.')) {
+          setAppState('cruises-list');
+          setActiveCruiseId(null);
+          localStorage.removeItem('activeCruiseId');
+        }
+      }}
+      className="mb-4 text-slate-400 hover:text-white transition-colors flex items-center gap-2 mx-auto"
+    >
+      <span>←</span> Back to My Cruises
+    </button>
+  )}
+
+  <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">
+    MomentsAtSea
+  </h1>
+  <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
+</div>
+
 
           {appState === 'cruises-list' ? (
             <>
