@@ -1236,6 +1236,8 @@ export default function HomePage() {
   // Header button -> simple chooser for finished cruises
   const [showOrderPicker, setShowOrderPicker] = useState(false);
   const finishedCruises = useMemo(() => allCruises.filter(isCruiseFinished), [allCruises]);
+// NEW: hold a cruise we want to open after returning to the library
+const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
 
   useEffect(() => {
     if (navigator.storage?.persist) navigator.storage.persist();
@@ -1253,6 +1255,18 @@ export default function HomePage() {
       }
     }
   }, []);
+  useEffect(() => {
+    if (pendingOrderCruise && !orderCruise) {
+      console.log('[finish] opening sheet for:', pendingOrderCruise.id);
+      // Let the library view finish rendering before opening the sheet
+      setTimeout(() => {
+        setOrderCruise(pendingOrderCruise);
+        setPendingOrderCruise(null);
+      }, 0);
+    }
+  }, [pendingOrderCruise, orderCruise]);
+  
+  
 
   const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
   const handleDetailsChange = (updates) => setCruiseDetails(prev => ({ ...prev, ...updates }));
@@ -1275,23 +1289,25 @@ export default function HomePage() {
   };
 
   const handleFinishCruise = () => {
-    // 1) Mark the active cruise as finished (and timestamp it)
     const updatedCruises = allCruises.map(c =>
       c.id === activeCruiseId
         ? { ...c, status: 'finished', finishedAt: new Date().toISOString() }
         : c
     );
   
-    // 2) Capture the cruise we just finished (BEFORE we clear activeCruiseId)
     const justFinished = updatedCruises.find(c => c.id === activeCruiseId) || null;
+    console.log('[finish] justFinished:', justFinished?.id);
   
-    // 3) Save changes and return to the library
     setAllCruises(updatedCruises);
     localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
-  
     localStorage.removeItem('activeCruiseId');
     setActiveCruiseId(null);
+  
+    if (justFinished) setPendingOrderCruise(justFinished);
     setAppState('cruises-list');
+  };
+  
+  
   
     // 4) Auto-open the OrderSheet for that finished cruise
     //    setTimeout lets the UI switch back to the library first, then shows the sheet.
