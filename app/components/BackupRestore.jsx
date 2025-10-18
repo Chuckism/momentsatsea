@@ -1,10 +1,12 @@
 'use client';
 import { useRef, useState } from 'react';
+import { supabaseConfigured, restoreLatestBackup } from '../../lib/backupSync';
 
-/* Export / Import JSON backup of cruises + entries (text only). */
+/** Export / Import (local JSON) + optional “Restore from Cloud” (Supabase). */
 export default function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppState }) {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
+  const hasCloud = supabaseConfigured();
 
   const exportJSON = () => {
     try {
@@ -21,7 +23,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
         exportedAt: new Date().toISOString(),
         allCruises: cruises,
         entriesByCruiseId,
-        note: 'Photos are stored in IndexedDB and are not included in this JSON.',
+        note: 'Photos are stored on the device (IndexedDB) and are not included in this JSON.',
       };
       const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
       const y = new Date();
@@ -53,7 +55,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
         return;
       }
 
-      // Merge strategy: append new cruises, overwrite cruises with the same id.
+      // Merge: overwrite same-id cruises, keep others
       const existing = JSON.parse(localStorage.getItem('allCruises') || '[]');
       const byId = new Map(existing.map(c => [String(c.id), c]));
       for (const c of data.allCruises) byId.set(String(c.id), c);
@@ -65,11 +67,10 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
         localStorage.setItem(`cruiseJournalEntries_${cid}`, JSON.stringify(entries || []));
       }
 
-      // Persist cruises list and refresh UI state
       localStorage.setItem('allCruises', JSON.stringify(merged));
       setAllCruises(merged);
 
-      // If there’s exactly one active cruise in the import, select it (nice UX)
+      // Nice UX: jump into an active cruise if one exists in the import
       const active = merged.find(c => c.status === 'active') || merged[0];
       if (active) {
         localStorage.setItem('activeCruiseId', active.id);
@@ -77,13 +78,34 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
         setAppState?.('journaling');
       }
 
-      alert('Import complete! (Photos are not included; only text/captions were imported.)');
+      alert('Import complete! (Photos are not included; use Export Photos for those.)');
     } catch (e) {
       alert('Import failed. See console for details.');
       console.error(e);
     } finally {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = '';
+    }
+  };
+
+  const handleRestoreFromCloud = async () => {
+    if (!hasCloud) return;
+    setBusy(true);
+    try {
+      const ok = await restoreLatestBackup();
+      if (ok) {
+        // Reload list from localStorage to reflect restored data
+        const cruises = JSON.parse(localStorage.getItem('allCruises') || '[]');
+        setAllCruises?.(cruises);
+        alert('Cloud restore complete! Your cruises and entries were updated.');
+      } else {
+        alert('No cloud backups found for this device/project yet.');
+      }
+    } catch (e) {
+      alert('Cloud restore failed. See console for details.');
+      console.error(e);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -107,7 +129,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
           </button>
 
           <label className={`cursor-pointer ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
-            <span className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors inline-block">
+            <span className="bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors inline-block">
               Import Backup
             </span>
             <input
@@ -119,13 +141,24 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
               disabled={busy}
             />
           </label>
+
+          {hasCloud && (
+            <button
+              type="button"
+              onClick={handleRestoreFromCloud}
+              disabled={busy}
+              className={`text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
+                busy ? 'bg-emerald-700/60 cursor-wait' : 'bg-emerald-600 hover:bg-emerald-700'
+              }`}
+            >
+              Restore from Cloud
+            </button>
+          )}
         </div>
       </div>
 
       <div className="text-xs text-slate-500 mt-2">
         Backups include your journal text and photo captions. Photos are stored on your device and are not in this backup.
-      </div>
-      <div className="text-xs text-slate-500">
         To copy photos too, use <strong>Export Photos (.zip)</strong> below.
       </div>
     </div>
