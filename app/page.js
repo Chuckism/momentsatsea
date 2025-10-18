@@ -277,12 +277,17 @@ function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise, o
         </div>
         <div className="flex-1">
         <h3 className="text-xl font-bold text-white mb-1">
-  {cruise.label || `${cruise.homePort?.split(',')[0] || 'Cruise'} Adventure`}</h3>
-  {!cruise.label && (
-  <div className="text-slate-400 text-sm">
-    {(cruise.homePort?.split(',')[0] || 'Cruise')} Adventure
-  </div>
-)}
+  {cruise.label || `${cruise.homePort?.split(',')[0] || 'Cruise'} Adventure`}
+</h3>
+
+{/* Subtle details line: Home port + date range */}
+<p className="text-slate-400 text-sm mb-2">
+  {cruise.homePort?.split(',')[0] || '—'}
+  {cruise.departureDate && cruise.returnDate ? (
+    <> &middot; {formatDateRange(cruise.departureDate, cruise.returnDate)}</>
+  ) : null}
+</p>
+
 
           <p className="text-slate-400 text-sm mb-2">{formatDateRange(cruise.departureDate, cruise.returnDate)}</p>
           <div className="flex items-center gap-4 text-xs text-slate-500">
