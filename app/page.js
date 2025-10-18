@@ -288,7 +288,6 @@ function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise, o
   ) : null}
 </p>
 
-
           <p className="text-slate-400 text-sm mb-2">{formatDateRange(cruise.departureDate, cruise.returnDate)}</p>
           <div className="flex items-center gap-4 text-xs text-slate-500">
             <span>📍 {cruise.itinerary?.length || 0} days</span>
@@ -1044,22 +1043,26 @@ function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppSta
     <div className="mt-6 rounded-xl bg-slate-800/40 border border-slate-700/60 p-4">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
-          <div className="text-white font-semibold">Backup & Restore</div>
+          {/* Title + subtitle */}
+          <div className="text-white font-semibold">Export Backup</div>
           <div className="text-slate-400 text-sm">
-            Export your cruises (text only) or import from another device.
+            Save your journal (text & captions) to a .json file. You can re-import it later.
           </div>
         </div>
+  
+        {/* Buttons */}
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={exportJSON}
             className="bg-slate-700 hover:bg-slate-600 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
-            Export JSON
+            Export Backup (.json)
           </button>
+  
           <label className={`cursor-pointer ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
             <span className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors inline-block">
-              Import JSON
+              Import Backup
             </span>
             <input
               ref={fileRef}
@@ -1070,6 +1073,19 @@ function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppSta
               disabled={busy}
             />
           </label>
+        </div>
+      </div>
+  
+      {/* Small footnotes */}
+      <div className="text-xs text-slate-500 mt-2">
+        Backups include your journal text and photo captions. Photos are stored on your device and are <em>not</em> in this backup.
+      </div>
+      <div className="text-xs text-slate-500">
+        To copy photos too, use <strong>Export Photos (.zip)</strong> below.
+      </div>
+    </div>
+  );
+  
 
           {/* Optional manual cloud backup button */}
           <button
