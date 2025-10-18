@@ -1,13 +1,12 @@
 'use client';
-// build: 2025-10-16T12:00-0500
+// build: 2025-10-18T13:30-0500
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { zipSync, strToU8 } from 'fflate';
 import OrderSheet from "./components/OrderSheet";
-import { supabase } from '../lib/supabaseClient';
+
+// NEW: cloud backup safety-net
 import { queueBackupAndSync, trySyncBackups } from '../lib/backupSync';
-
-
 
 /* =========================
    IndexedDB: Offline Photos
@@ -251,8 +250,7 @@ function useStorageEstimate() {
    =================== */
 function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise, onOpenOrder }) {
   const activeCruises = cruises.filter(c => !isCruiseFinished(c));
-const finishedCruises = cruises.filter(isCruiseFinished);
-
+  const finishedCruises = cruises.filter(isCruiseFinished);
 
   const formatDateRange = (departure, returnDate) => {
     if (!departure || !returnDate) return 'Dates not set';
@@ -696,21 +694,23 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     try {
       localStorage.setItem(`cruiseJournalEntries_${cruiseDetails.id}`, payload);
       setSavedEntries(next);
-    
+
       // Cloud safety net (text-only, offline-first). Fire-and-forget.
-      // If it fails (offline, etc.), we’ll retry later—don’t block the UI.
       queueBackupAndSync(cruiseDetails.id)?.catch?.(() => {});
-    
+
       if (!isAutoSave) {
         if (navigator.vibrate) navigator.vibrate(12);
         setShowSuccessMessage(isUpdate ? 'updated' : 'saved');
         setTimeout(() => setShowSuccessMessage(''), 3000);
-        // … (rest unchanged)
+
+        if (!isUpdate) {
+          const i = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
+          if (i < cruiseDetails.itinerary.length - 1) setSelectedDate(cruiseDetails.itinerary[i + 1].date);
+        }
       }
     } catch {
       alert("CRITICAL: Failed to save your entry (browser storage error). Please copy your text out before refreshing.");
     }
-    
   };
 
   const currentDayIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
@@ -943,8 +943,6 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
 }
 
 /* ====================== Backup/Restore (device transfer) ====================== */
-// Exports all cruises + per-cruise entries from localStorage to a JSON file.
-// NOTE: Photos in IndexedDB do NOT transfer (use Photo ZIP export below).
 function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppState }) {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
@@ -1060,6 +1058,15 @@ function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppSta
               disabled={busy}
             />
           </label>
+
+          {/* Optional manual cloud backup button */}
+          <button
+            type="button"
+            onClick={() => queueBackupAndSync()?.catch?.(()=>{})}
+            className="bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          >
+            Backup to Cloud
+          </button>
         </div>
       </div>
       <div className="text-xs text-slate-500 mt-2">
@@ -1237,14 +1244,15 @@ export default function HomePage() {
   const [allCruises, setAllCruises] = useState([]);
   const [activeCruiseId, setActiveCruiseId] = useState(null);
 
-  // NEW: store the whole cruise object for ordering, not just an id
+  // Store the whole cruise object for ordering
   const [orderCruise, setOrderCruise] = useState(null);
   // Header button -> simple chooser for finished cruises
   const [showOrderPicker, setShowOrderPicker] = useState(false);
   const finishedCruises = useMemo(() => allCruises.filter(isCruiseFinished), [allCruises]);
-// NEW: hold a cruise we want to open after returning to the library
-const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
+  // NEW: hold a cruise we want to open after returning to the library
+  const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
 
+  // Persist permission & hydrate local state
   useEffect(() => {
     if (navigator.storage?.persist) navigator.storage.persist();
 
@@ -1261,34 +1269,14 @@ const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
       }
     }
   }, []);
-  useEffect(() => {
-    if (pendingOrderCruise && !orderCruise) {
-      console.log('[finish] opening sheet for:', pendingOrderCruise.id);
-      // Let the library view finish rendering before opening the sheet
-      setTimeout(() => {
-        setOrderCruise(pendingOrderCruise);
-        setPendingOrderCruise(null);
-      }, 0);
-    }
-  }, [pendingOrderCruise, orderCruise]);
-  
-  useEffect(() => {
-    (async () => {
-      if (!supabase) { console.warn('Supabase not configured'); return; }
-      const { error } = await supabase
-        .from('keepsake_orders')
-        .insert([{ id: `test-${Date.now()}`, cruise_id: null, payload: { ping: 'ok' } }]);
-      console.log('Supabase insert test:', error ?? 'ok');
-    })();
-  }, []);
 
+  // NEW: auto-try to flush any queued backups on load and when coming online
   useEffect(() => {
-    trySyncBackups();                    // attempt once on load
+    trySyncBackups();
     const onOnline = () => { trySyncBackups(); };
     window.addEventListener('online', onOnline);
     return () => window.removeEventListener('online', onOnline);
   }, []);
-  
 
   const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
   const handleDetailsChange = (updates) => setCruiseDetails(prev => ({ ...prev, ...updates }));
@@ -1310,34 +1298,31 @@ const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
     setAppState('setup');
   };
 
+  // REPLACED: marks finished, backs up, then opens order sheet after switch
   const handleFinishCruise = () => {
     const updatedCruises = allCruises.map(c =>
       c.id === activeCruiseId
         ? { ...c, status: 'finished', finishedAt: new Date().toISOString() }
         : c
     );
-  
+
+    // capture before clearing
     const justFinished = updatedCruises.find(c => c.id === activeCruiseId) || null;
-    console.log('[finish] justFinished:', justFinished?.id);
-  
+
+    // persist
     setAllCruises(updatedCruises);
     localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
     localStorage.removeItem('activeCruiseId');
     setActiveCruiseId(null);
-  
+
+    // backup snapshot of text data (offline-first)
+    queueBackupAndSync(activeCruiseId)?.catch?.(()=>{});
+
+    // flag for opening order after we switch views
     if (justFinished) setPendingOrderCruise(justFinished);
+
     setAppState('cruises-list');
   };
-  
-  
-  
-    // 4) Auto-open the OrderSheet for that finished cruise
-    //    setTimeout lets the UI switch back to the library first, then shows the sheet.
-    if (justFinished) {
-      setTimeout(() => setOrderCruise(justFinished), 0);
-    }
-  };
-  
 
   const handleSelectCruise = (cruiseId) => {
     const cruise = allCruises.find(c => c.id === cruiseId);
@@ -1366,6 +1351,14 @@ const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
     }
   };
 
+  // NEW: once back on library screen, open the order sheet if requested
+  useEffect(() => {
+    if (appState === 'cruises-list' && pendingOrderCruise) {
+      setOrderCruise(pendingOrderCruise);  // opens the OrderSheet
+      setPendingOrderCruise(null);         // clear the flag
+    }
+  }, [appState, pendingOrderCruise]);
+
   return (
     <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-x-hidden">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -1390,7 +1383,6 @@ const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
             <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">MomentsAtSea</h1>
             <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
           </div>
-          
 
           {appState === 'cruises-list' ? (
             <>
@@ -1443,47 +1435,46 @@ const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
       `}</style>
 
       {/* Order sheet tied to the selected (finished) cruise */}
-      {/* Header button -> choose which finished cruise to order */}
-{showOrderPicker && (
-  <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 p-4">
-    <div className="w-full max-w-md bg-slate-900 rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden">
-      <div className="px-5 py-4 border-b border-slate-700/60">
-        <div className="text-sm uppercase tracking-wider text-slate-400">Create Keepsakes</div>
-        <div className="text-xl font-bold text-white">Choose a finished cruise</div>
-      </div>
-
-      <div className="p-5 space-y-3 max-h-[60vh] overflow-auto">
-        {finishedCruises.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => { setOrderCruise(c); setShowOrderPicker(false); }}
-            className="w-full text-left bg-slate-800/40 hover:bg-slate-800/70 border border-slate-700/60 hover:border-slate-600/70 rounded-xl px-4 py-3 transition-colors"
-          >
-            <div className="font-semibold text-white">
-              {(c.homePort?.split(',')[0] || 'Cruise')} Adventure
+      {showOrderPicker && (
+        <div className="fixed inset-0 z-[65] flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md bg-slate-900 rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-700/60">
+              <div className="text-sm uppercase tracking-wider text-slate-400">Create Keepsakes</div>
+              <div className="text-xl font-bold text-white">Choose a finished cruise</div>
             </div>
-            <div className="text-slate-400 text-sm">
-              {(c.departureDate || '—')} – {(c.returnDate || '—')}
-            </div>
-          </button>
-        ))}
-        {finishedCruises.length === 0 && (
-          <div className="text-slate-400 text-sm">No finished cruises yet.</div>
-        )}
-      </div>
 
-      <div className="px-5 py-4 border-t border-slate-700/60 flex justify-end">
-        <button
-          type="button"
-          onClick={() => setShowOrderPicker(false)}
-          className="bg-slate-700 hover:bg-slate-600 text-white font-semibold px-4 py-2 rounded-lg"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+            <div className="p-5 space-y-3 max-h-[60vh] overflow-auto">
+              {finishedCruises.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => { setOrderCruise(c); setShowOrderPicker(false); }}
+                  className="w-full text-left bg-slate-800/40 hover:bg-slate-800/70 border border-slate-700/60 hover:border-slate-600/70 rounded-xl px-4 py-3 transition-colors"
+                >
+                  <div className="font-semibold text-white">
+                    {(c.homePort?.split(',')[0] || 'Cruise')} Adventure
+                  </div>
+                  <div className="text-slate-400 text-sm">
+                    {(c.departureDate || '—')} – {(c.returnDate || '—')}
+                  </div>
+                </button>
+              ))}
+              {finishedCruises.length === 0 && (
+                <div className="text-slate-400 text-sm">No finished cruises yet.</div>
+              )}
+            </div>
+
+            <div className="px-5 py-4 border-t border-slate-700/60 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowOrderPicker(false)}
+                className="bg-slate-700 hover:bg-slate-600 text-white font-semibold px-4 py-2 rounded-lg"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <OrderSheet
         open={!!orderCruise}
