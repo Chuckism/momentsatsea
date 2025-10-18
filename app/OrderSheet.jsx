@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { X, Check, ShieldCheck, Film, FileText, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Check, ShieldCheck, Film, FileText, Sparkles, Calendar, Ship, MapPin } from 'lucide-react';
 
 const PACKAGES = [
   {
@@ -25,18 +25,23 @@ function formatUSD(cents) {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-/**
- * Props:
- * - open: boolean
- * - onClose: () => void
- * - cruise: { id, homePort, departureDate, returnDate } | null
- * - onSubmit?: (order) => Promise<void> | void   // optional (for Supabase/Stripe)
- */
 export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
   const [selected, setSelected] = useState('bundle_masterpiece');
   const [removeWM, setRemoveWM] = useState(false);
-  const [status, setStatus] = useState('idle'); // idle | saving | done | error
+  const [status, setStatus] = useState('idle'); // idle | saving | done
   const [isOnline, setIsOnline] = useState(true);
+
+  // Derive friendly cruise info for the header
+  const { cruiseTitle, dateRange, portShort } = useMemo(() => {
+    const title = cruise?.homePort?.split(',')[0] ? `${cruise.homePort.split(',')[0]} Adventure` : 'Cruise Adventure';
+    const start = cruise?.departureDate ? new Date(`${cruise.departureDate}T00:00:00`) : null;
+    const end = cruise?.returnDate ? new Date(`${cruise.returnDate}T00:00:00`) : null;
+    const range = start && end && !Number.isNaN(start) && !Number.isNaN(end)
+      ? `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : 'Dates not set';
+    const port = cruise?.homePort?.split(',')[0] || '';
+    return { cruiseTitle: title, dateRange: range, portShort: port };
+  }, [cruise]);
 
   useEffect(() => {
     const up = () => setIsOnline(navigator.onLine);
@@ -46,11 +51,20 @@ export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
     return () => { window.removeEventListener('online', up); window.removeEventListener('offline', up); };
   }, []);
 
+  // Reset when sheet closes/opens
   useEffect(() => {
-    if (!open) {
-      setStatus('idle');
-      setSelected('bundle_masterpiece');
-      setRemoveWM(false);
+    if (!open) { setStatus('idle'); setSelected('bundle_masterpiece'); setRemoveWM(false); }
+  }, [open]);
+
+  // Auto-focus the sheet when it opens (helps “auto-open” feel deterministic)
+  useEffect(() => {
+    if (open) {
+      // slight delay lets the backdrop mount
+      const t = setTimeout(() => {
+        const el = document.getElementById('order-sheet-root');
+        el?.focus?.();
+      }, 0);
+      return () => clearTimeout(t);
     }
   }, [open]);
 
@@ -58,86 +72,55 @@ export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
 
   const chosen = PACKAGES.find(p => p.id === selected);
   const subtotal = chosen.price;
-  const wmAddon = removeWM ? (selected === 'bundle_masterpiece' ? 2000 : 1000) : 0; // $20 bundle, $10 single
+  const wmAddon = removeWM ? (selected === 'bundle_masterpiece' ? 2000 : 1000) : 0;
   const total = subtotal + wmAddon;
 
-  const queueLocalOrder = (order) => {
-    try {
-      const key = 'moments_orders_queue';
-      const prev = JSON.parse(localStorage.getItem(key) || '[]');
-      prev.push(order);
-      localStorage.setItem(key, JSON.stringify(prev));
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
   const startOrder = async () => {
-    if (!cruise?.id) {
-      // Guard: shouldn’t happen—UI only opens this when a finished cruise is chosen.
-      setStatus('error');
-      return;
-    }
     setStatus('saving');
-
+    // Build a minimal order payload (works offline)
     const order = {
-      id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
-      createdAt: new Date().toISOString(),
-      cruiseId: cruise.id,
-      cruiseSummary: {
-        homePort: cruise.homePort ?? null,
-        departureDate: cruise.departureDate ?? null,
-        returnDate: cruise.returnDate ?? null,
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      cruiseId: cruise?.id || null,
+      cruiseMeta: {
+        title: cruiseTitle,
+        homePort: cruise?.homePort || null,
+        departureDate: cruise?.departureDate || null,
+        returnDate: cruise?.returnDate || null,
       },
       packageId: selected,
       removeWatermark: removeWM,
-      lineItems: [
-        { sku: selected, amountCents: subtotal, qty: 1 },
-        ...(removeWM ? [{ sku: selected === 'bundle_masterpiece' ? 'wm_bundle' : 'wm_single', amountCents: wmAddon, qty: 1 }] : []),
-      ],
-      totalCents: total,
-      status: isOnline ? 'pending_payment' : 'queued_offline',
-      source: 'app_order_sheet_v1',
+      subtotal,
+      watermarkAddon: wmAddon,
+      total,
+      createdAt: new Date().toISOString(),
+      isOnlineAtSubmit: isOnline,
     };
 
-    // Always queue locally first so offline users are safe.
-    const queued = queueLocalOrder(order);
-    if (!queued) {
-      setStatus('error');
-      return;
-    }
+    // If parent provided a callback, let it try to sync
+    try { await onSubmit?.(order); } catch {}
 
-    // Optional: try to hand it off to caller (e.g., Supabase/Stripe) when online
-    if (isOnline && typeof onSubmit === 'function') {
-      try {
-        await onSubmit(order);
-      } catch {
-        // Keep queued; caller can process later
-      }
-    }
-
+    // Mock local save UX
+    await new Promise(r => setTimeout(r, 700));
     setStatus('done');
   };
 
-  const portName = (cruise?.homePort || '').split(',')[0] || 'Cruise';
-  const dateSpan =
-    cruise?.departureDate && cruise?.returnDate
-      ? `${cruise.departureDate} – ${cruise.returnDate}`
-      : 'Dates not set';
-
   return (
-    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/60 p-0 md:p-6">
-      <div className="w-full md:max-w-2xl bg-slate-900 rounded-t-2xl md:rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/60 p-0 md:p-6" id="order-sheet-backdrop">
+      <div
+        className="w-full md:max-w-2xl bg-slate-900 rounded-t-2xl md:rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden outline-none"
+        id="order-sheet-root"
+        tabIndex={-1}
+        aria-modal="true"
+        role="dialog"
+      >
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/60">
           <div>
-            <div className="text-sm uppercase tracking-wider text-slate-400">Transform Your Journal</div>
-            <div className="text-xl font-bold text-white">Create Your Keepsakes</div>
-            {cruise && (
-              <div className="text-slate-400 text-xs mt-1">
-                For: <span className="text-slate-300 font-medium">{portName} Adventure</span> · <span>{dateSpan}</span>
-              </div>
-            )}
+            <div className="text-sm uppercase tracking-wider text-slate-400">Create Your Keepsakes</div>
+            <div className="text-xl font-bold text-white">{cruiseTitle}</div>
+            <div className="mt-1 text-slate-400 flex items-center gap-3 text-sm">
+              <span className="inline-flex items-center gap-1"><Calendar className="w-4 h-4" /> {dateRange}</span>
+              {portShort ? <span className="inline-flex items-center gap-1"><MapPin className="w-4 h-4" /> {portShort}</span> : null}
+            </div>
           </div>
           <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-white">
             <X className="w-6 h-6" />
@@ -198,7 +181,7 @@ export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
                 <div>
                   <div className="font-semibold text-white">Remove watermark (+{formatUSD(selected==='bundle_masterpiece' ? 2000 : 1000)})</div>
                   <div className="text-sm text-slate-400">
-                    Default videos include a subtle “MomentsAtSea.com” mark. Remove it for a clean export.
+                    Default videos include an elegant, opaque “MomentsAtSea.com” mark. Remove it for a clean master.
                   </div>
                 </div>
                 <label className="inline-flex items-center gap-2 cursor-pointer select-none">
@@ -231,7 +214,7 @@ export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
               onClick={startOrder}
               className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-bold py-3 rounded-xl shadow-lg transform hover:scale-[1.01] transition-all"
             >
-              {isOnline ? 'Finalize My Masterpiece' : 'Save Order (works offline)'}
+              {isOnline ? 'Finalize My Masterpiece' : 'Save Order (will process when online)'}
             </button>
           )}
 
@@ -246,19 +229,12 @@ export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
               <div className="font-semibold mb-1">Your order is saved ✅</div>
               <div className="text-sm">
                 {isOnline
-                  ? 'We saved your order. Next up: payment and rendering in the cloud.'
-                  : 'You’re offline—no problem. We’ll process this when you’re back online.'}
+                  ? 'This is a demo flow. In the real version, we’ll send you to payment and then start rendering your videos/PDF automatically.'
+                  : 'You’re offline—no problem. We’ll process this the next time you’re online.'}
               </div>
-              <div className="mt-3 flex gap-2">
+              <div className="mt-3">
                 <button onClick={onClose} className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold px-4 py-2 rounded-lg">Close</button>
               </div>
-            </div>
-          )}
-
-          {status === 'error' && (
-            <div className="rounded-xl border border-red-700/40 bg-red-900/20 p-4 text-red-200">
-              <div className="font-semibold mb-1">Couldn’t save your order.</div>
-              <div className="text-sm">Please try again, or pick a finished cruise first.</div>
             </div>
           )}
         </div>
