@@ -276,7 +276,14 @@ function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise, o
           <Ship className="w-6 h-6 text-white" />
         </div>
         <div className="flex-1">
-          <h3 className="text-xl font-bold text-white mb-1">{cruise.homePort?.split(',')[0] || 'Cruise'} Adventure</h3>
+        <h3 className="text-xl font-bold text-white mb-1">
+  {cruise.label || `${cruise.homePort?.split(',')[0] || 'Cruise'} Adventure`}</h3>
+  {!cruise.label && (
+  <div className="text-slate-400 text-sm">
+    {(cruise.homePort?.split(',')[0] || 'Cruise')} Adventure
+  </div>
+)}
+
           <p className="text-slate-400 text-sm mb-2">{formatDateRange(cruise.departureDate, cruise.returnDate)}</p>
           <div className="flex items-center gap-4 text-xs text-slate-500">
             <span>📍 {cruise.itinerary?.length || 0} days</span>
@@ -1238,6 +1245,29 @@ function PhotoZipExport({ allCruises }) {
   );
 }
 
+function pad(n) { return String(n); } // simple; no leading zeros needed
+
+function computeNextCruiseIndex(cruises, handle) {
+  // Count cruises already using this handle prefix
+  const prefix = `${handle}_`;
+  const existing = cruises
+    .map(c => c?.label)
+    .filter(l => typeof l === 'string' && l.startsWith(prefix))
+    .map(l => {
+      const parts = l.split('_');
+      const maybeNum = Number(parts[parts.length - 1]);
+      return Number.isFinite(maybeNum) ? maybeNum : 0;
+    });
+
+  const maxExisting = existing.length ? Math.max(...existing) : 0;
+  return maxExisting + 1;
+}
+
+function makeCruiseLabel(cruises, handle) {
+  const next = computeNextCruiseIndex(cruises, handle);
+  return `${handle}_${pad(next)}`;
+}
+
 /* ============= Main component ============= */
 export default function HomePage() {
   const [appState, setAppState] = useState('cruises-list');
@@ -1251,6 +1281,9 @@ export default function HomePage() {
   const finishedCruises = useMemo(() => allCruises.filter(isCruiseFinished), [allCruises]);
   // NEW: hold a cruise we want to open after returning to the library
   const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
+  // A short handle used to auto-name cruises like "ChuckNealis_1"
+const [userHandle, setUserHandle] = useState(null);
+
 
   // Persist permission & hydrate local state
   useEffect(() => {
@@ -1278,11 +1311,35 @@ export default function HomePage() {
     return () => window.removeEventListener('online', onOnline);
   }, []);
 
+  useEffect(() => {
+    try {
+      let h = localStorage.getItem('userHandle');
+      if (!h && typeof window !== 'undefined') {
+        // Ask once. If user cancels, fall back to "Cruiser".
+        h = window.prompt('Pick a short handle for cruise names (e.g., ChuckNealis):') || 'Cruiser';
+        localStorage.setItem('userHandle', h);
+      }
+      setUserHandle(h || 'Cruiser');
+    } catch {
+      setUserHandle('Cruiser');
+    }
+  }, []);
+  
   const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
   const handleDetailsChange = (updates) => setCruiseDetails(prev => ({ ...prev, ...updates }));
 
   const handleSaveSetup = (itinerary) => {
-    const newCruise = { ...cruiseDetails, itinerary: itinerary || cruiseDetails.itinerary, id: Date.now().toString(), createdAt: new Date().toISOString(), status: 'active' };
+    const label = makeCruiseLabel(allCruises, userHandle || 'Cruiser');
+  
+    const newCruise = {
+      ...cruiseDetails,
+      itinerary: itinerary || cruiseDetails.itinerary,
+      id: Date.now().toString(),
+      createdAt: new Date().toISOString(),
+      status: 'active',
+      label, // <-- NEW
+    };
+  
     const updatedCruises = [...allCruises, newCruise];
     setAllCruises(updatedCruises);
     setActiveCruiseId(newCruise.id);
@@ -1291,6 +1348,7 @@ export default function HomePage() {
     setCruiseDetails(newCruise);
     setAppState('journaling');
   };
+  
 
   const handleStartNewCruise = () => {
     setCruiseDetails({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
