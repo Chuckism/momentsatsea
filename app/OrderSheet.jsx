@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { X, Check, ShieldCheck, Film, FileText, Sparkles } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { X, Check, ShieldCheck, Film, FileText, Sparkles, Calendar, Ship, MapPin } from 'lucide-react';
 
 const PACKAGES = [
   {
@@ -25,11 +25,23 @@ function formatUSD(cents) {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-export default function OrderSheet({ open, onClose }) {
+export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
   const [selected, setSelected] = useState('bundle_masterpiece');
   const [removeWM, setRemoveWM] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | saving | done
   const [isOnline, setIsOnline] = useState(true);
+
+  // Derive friendly cruise info for the header
+  const { cruiseTitle, dateRange, portShort } = useMemo(() => {
+    const title = cruise?.homePort?.split(',')[0] ? `${cruise.homePort.split(',')[0]} Adventure` : 'Cruise Adventure';
+    const start = cruise?.departureDate ? new Date(`${cruise.departureDate}T00:00:00`) : null;
+    const end = cruise?.returnDate ? new Date(`${cruise.returnDate}T00:00:00`) : null;
+    const range = start && end && !Number.isNaN(start) && !Number.isNaN(end)
+      ? `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+      : 'Dates not set';
+    const port = cruise?.homePort?.split(',')[0] || '';
+    return { cruiseTitle: title, dateRange: range, portShort: port };
+  }, [cruise]);
 
   useEffect(() => {
     const up = () => setIsOnline(navigator.onLine);
@@ -39,33 +51,76 @@ export default function OrderSheet({ open, onClose }) {
     return () => { window.removeEventListener('online', up); window.removeEventListener('offline', up); };
   }, []);
 
+  // Reset when sheet closes/opens
   useEffect(() => {
     if (!open) { setStatus('idle'); setSelected('bundle_masterpiece'); setRemoveWM(false); }
+  }, [open]);
+
+  // Auto-focus the sheet when it opens (helps “auto-open” feel deterministic)
+  useEffect(() => {
+    if (open) {
+      // slight delay lets the backdrop mount
+      const t = setTimeout(() => {
+        const el = document.getElementById('order-sheet-root');
+        el?.focus?.();
+      }, 0);
+      return () => clearTimeout(t);
+    }
   }, [open]);
 
   if (!open) return null;
 
   const chosen = PACKAGES.find(p => p.id === selected);
   const subtotal = chosen.price;
-  const wmAddon = removeWM
-    ? (selected === 'bundle_masterpiece' ? 2000 : 1000) // $20 for all bundle videos, $10 for a single video/PDF set
-    : 0;
+  const wmAddon = removeWM ? (selected === 'bundle_masterpiece' ? 2000 : 1000) : 0;
   const total = subtotal + wmAddon;
 
   const startOrder = async () => {
     setStatus('saving');
-    // MOCK ONLY: pretend we save an order locally and “queue” it if offline
-    await new Promise(r => setTimeout(r, 900));
+    // Build a minimal order payload (works offline)
+    const order = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      cruiseId: cruise?.id || null,
+      cruiseMeta: {
+        title: cruiseTitle,
+        homePort: cruise?.homePort || null,
+        departureDate: cruise?.departureDate || null,
+        returnDate: cruise?.returnDate || null,
+      },
+      packageId: selected,
+      removeWatermark: removeWM,
+      subtotal,
+      watermarkAddon: wmAddon,
+      total,
+      createdAt: new Date().toISOString(),
+      isOnlineAtSubmit: isOnline,
+    };
+
+    // If parent provided a callback, let it try to sync
+    try { await onSubmit?.(order); } catch {}
+
+    // Mock local save UX
+    await new Promise(r => setTimeout(r, 700));
     setStatus('done');
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/60 p-0 md:p-6">
-      <div className="w-full md:max-w-2xl bg-slate-900 rounded-t-2xl md:rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/60 p-0 md:p-6" id="order-sheet-backdrop">
+      <div
+        className="w-full md:max-w-2xl bg-slate-900 rounded-t-2xl md:rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden outline-none"
+        id="order-sheet-root"
+        tabIndex={-1}
+        aria-modal="true"
+        role="dialog"
+      >
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/60">
           <div>
-            <div className="text-sm uppercase tracking-wider text-slate-400">Transform Your Journal</div>
-            <div className="text-xl font-bold text-white">Create Your Keepsakes</div>
+            <div className="text-sm uppercase tracking-wider text-slate-400">Create Your Keepsakes</div>
+            <div className="text-xl font-bold text-white">{cruiseTitle}</div>
+            <div className="mt-1 text-slate-400 flex items-center gap-3 text-sm">
+              <span className="inline-flex items-center gap-1"><Calendar className="w-4 h-4" /> {dateRange}</span>
+              {portShort ? <span className="inline-flex items-center gap-1"><MapPin className="w-4 h-4" /> {portShort}</span> : null}
+            </div>
           </div>
           <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-white">
             <X className="w-6 h-6" />

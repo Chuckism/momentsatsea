@@ -28,10 +28,11 @@ if(!self.define){let e,s={};const a=(a,n)=>(a=new URL(a+".js",n).href,s[a]||new 
     {url:"/globe.svg",revision:"2aaafa6a49b6563925fe440891e32717"},
     {url:"/icon-192.png",revision:"8e883a5bcfc379d1a30ee44d0388cb33"},
     {url:"/icon-512.png",revision:"11c95d4458f3e4481feb91d921860d8e"},
-    {url:"/manifest.json",revision:"0205b10eb057c7840895ae89bd13b553"}, // legacy reference from prior build
+    {url:"/manifest.webmanifest",revision:null},
     {url:"/next.svg",revision:"8e061864f388b47f33a1c3780831193e"},
     {url:"/vercel.svg",revision:"c0af2f507b369b085b35ef4bbe3bcf1e"},
-    {url:"/window.svg",revision:"a2760511c65806022ad20adf74370ff3"}
+    {url:"/window.svg",revision:"a2760511c65806022ad20adf74370ff3"},
+    {url:"/offline.html",revision:null}
   ],{ignoreURLParametersMatching:[]}),
   e.cleanupOutdatedCaches(),
   // Keep a fast, cached start URL
@@ -50,18 +51,11 @@ if(!self.define){let e,s={};const a=(a,n)=>(a=new URL(a+".js",n).href,s[a]||new 
   e.registerRoute(/\.(?:json|xml|csv)$/i,new e.NetworkFirst({cacheName:"static-data-assets",plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),
   e.registerRoute(({url:e})=>{if(!(self.origin===e.origin))return!1;const s=e.pathname;return!s.startsWith("/api/auth/")&&!!s.startsWith("/api/")},new e.NetworkFirst({cacheName:"apis",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:16,maxAgeSeconds:86400})]}),"GET"),
   e.registerRoute(({url:e})=>{if(!(self.origin===e.origin))return!1;return!e.pathname.startsWith("/api/")},new e.NetworkFirst({cacheName:"others",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:86400})]}),"GET"),
-  e.registerRoute(({url:e})=>!(self.origin===e.origin),new e.NetworkFirst({cacheName:"cross-origin",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:3600})]}),"GET")});
-  
-  // --- MomentsAtSea custom additions ---
-  
-  // 0) Make sure the offline fallback is precached (so setCatchHandler can find it)
-  try {
-    // revision null => always update when SW updates
-    workbox.precaching.precacheAndRoute([{ url: "/offline.html", revision: null }], {
-      ignoreURLParametersMatching: [],
-    });
-  } catch (_) {}
-  
+  e.registerRoute(({url:e})=>!(self.origin===e.origin),new e.NetworkFirst({cacheName:"cross-origin",networkTimeoutSeconds:10,plugins:[new e.ExpirationPlugin({maxEntries:32,maxAgeSeconds:3600})]}),"GET");
+
+  // --- MomentsAtSea custom additions (inside the define wrapper) ---
+  const wb = self.workbox || e;
+
   // 1) Navigation preload for faster online navigations
   self.addEventListener("activate", (event) => {
     event.waitUntil((async () => {
@@ -70,32 +64,31 @@ if(!self.define){let e,s={};const a=(a,n)=>(a=new URL(a+".js",n).href,s[a]||new 
       }
     })());
   });
-  
+
   // 2) Allow the page to tell a waiting SW to take control immediately
   self.addEventListener("message", (event) => {
     if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
   });
-  
+
   // 3) Offline fallback for navigations
   try {
-    workbox.routing.setCatchHandler(async ({ event }) => {
+    wb.routing.setCatchHandler(async ({ event }) => {
       if (event.request.destination === "document") {
-        // If navigation fails (offline), show the offline page
         const cached = await caches.match("/offline.html", { ignoreSearch: true });
         return cached || new Response("You're offline.", { status: 503, headers: { "Content-Type": "text/plain" } });
       }
       return Response.error();
     });
   } catch (_) {}
-  
+
   // 4) Slightly larger image cache (bounded)
   try {
-    workbox.routing.registerRoute(
+    wb.routing.registerRoute(
       ({ request }) => request.destination === "image",
-      new workbox.strategies.StaleWhileRevalidate({
+      new wb.strategies.StaleWhileRevalidate({
         cacheName: "img",
         plugins: [
-          new workbox.expiration.ExpirationPlugin({
+          new wb.expiration.ExpirationPlugin({
             maxEntries: 120,
             maxAgeSeconds: 30 * 24 * 60 * 60, // 30 days
           }),
@@ -103,15 +96,16 @@ if(!self.define){let e,s={};const a=(a,n)=>(a=new URL(a+".js",n).href,s[a]||new 
       })
     );
   } catch (_) {}
-  
+
   // 5) Ensure the new manifest path is cached at runtime
   try {
-    workbox.routing.registerRoute(
-      ({url, request}) => request.destination === "manifest" ||
-                          (url.origin === self.location.origin && url.pathname === "/manifest.webmanifest"),
-      new workbox.strategies.StaleWhileRevalidate({
+    wb.routing.registerRoute(
+      ({url, request}) =>
+        request.destination === "manifest" ||
+        (url.origin === self.location.origin && url.pathname === "/manifest.webmanifest"),
+      new wb.strategies.StaleWhileRevalidate({
         cacheName: "pwa-manifest",
       })
     );
   } catch (_) {}
-  
+});

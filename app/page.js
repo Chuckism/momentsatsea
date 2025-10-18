@@ -4,6 +4,10 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { zipSync, strToU8 } from 'fflate';
 import OrderSheet from "./components/OrderSheet";
+import { supabase } from '../lib/supabaseClient';
+import { queueBackupAndSync, trySyncBackups } from '../lib/backupSync';
+
+
 
 /* =========================
    IndexedDB: Offline Photos
@@ -246,8 +250,9 @@ function useStorageEstimate() {
    Cruises Library UI
    =================== */
 function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise, onOpenOrder }) {
-  const activeCruises = cruises.filter(c => c.status === 'active');
-  const finishedCruises = cruises.filter(c => c.status === 'finished');
+  const activeCruises = cruises.filter(c => !isCruiseFinished(c));
+const finishedCruises = cruises.filter(isCruiseFinished);
+
 
   const formatDateRange = (departure, returnDate) => {
     if (!departure || !returnDate) return 'Dates not set';
@@ -691,19 +696,21 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     try {
       localStorage.setItem(`cruiseJournalEntries_${cruiseDetails.id}`, payload);
       setSavedEntries(next);
+    
+      // Cloud safety net (text-only, offline-first). Fire-and-forget.
+      // If it fails (offline, etc.), we’ll retry later—don’t block the UI.
+      queueBackupAndSync(cruiseDetails.id)?.catch?.(() => {});
+    
       if (!isAutoSave) {
         if (navigator.vibrate) navigator.vibrate(12);
         setShowSuccessMessage(isUpdate ? 'updated' : 'saved');
         setTimeout(() => setShowSuccessMessage(''), 3000);
-
-        if (!isUpdate) {
-          const i = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
-          if (i < cruiseDetails.itinerary.length - 1) setSelectedDate(cruiseDetails.itinerary[i + 1].date);
-        }
+        // … (rest unchanged)
       }
     } catch {
       alert("CRITICAL: Failed to save your entry (browser storage error). Please copy your text out before refreshing.");
     }
+    
   };
 
   const currentDayIndex = cruiseDetails.itinerary.findIndex(d => d.date === selectedDate);
@@ -1235,6 +1242,8 @@ export default function HomePage() {
   // Header button -> simple chooser for finished cruises
   const [showOrderPicker, setShowOrderPicker] = useState(false);
   const finishedCruises = useMemo(() => allCruises.filter(isCruiseFinished), [allCruises]);
+// NEW: hold a cruise we want to open after returning to the library
+const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
 
   useEffect(() => {
     if (navigator.storage?.persist) navigator.storage.persist();
@@ -1252,6 +1261,34 @@ export default function HomePage() {
       }
     }
   }, []);
+  useEffect(() => {
+    if (pendingOrderCruise && !orderCruise) {
+      console.log('[finish] opening sheet for:', pendingOrderCruise.id);
+      // Let the library view finish rendering before opening the sheet
+      setTimeout(() => {
+        setOrderCruise(pendingOrderCruise);
+        setPendingOrderCruise(null);
+      }, 0);
+    }
+  }, [pendingOrderCruise, orderCruise]);
+  
+  useEffect(() => {
+    (async () => {
+      if (!supabase) { console.warn('Supabase not configured'); return; }
+      const { error } = await supabase
+        .from('keepsake_orders')
+        .insert([{ id: `test-${Date.now()}`, cruise_id: null, payload: { ping: 'ok' } }]);
+      console.log('Supabase insert test:', error ?? 'ok');
+    })();
+  }, []);
+
+  useEffect(() => {
+    trySyncBackups();                    // attempt once on load
+    const onOnline = () => { trySyncBackups(); };
+    window.addEventListener('online', onOnline);
+    return () => window.removeEventListener('online', onOnline);
+  }, []);
+  
 
   const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
   const handleDetailsChange = (updates) => setCruiseDetails(prev => ({ ...prev, ...updates }));
@@ -1274,17 +1311,33 @@ export default function HomePage() {
   };
 
   const handleFinishCruise = () => {
-    const updatedCruises = allCruises.map(c => c.id === activeCruiseId ? { ...c, status:'finished', finishedAt: new Date().toISOString() } : c);
+    const updatedCruises = allCruises.map(c =>
+      c.id === activeCruiseId
+        ? { ...c, status: 'finished', finishedAt: new Date().toISOString() }
+        : c
+    );
+  
+    const justFinished = updatedCruises.find(c => c.id === activeCruiseId) || null;
+    console.log('[finish] justFinished:', justFinished?.id);
+  
     setAllCruises(updatedCruises);
     localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
     localStorage.removeItem('activeCruiseId');
     setActiveCruiseId(null);
+  
+    if (justFinished) setPendingOrderCruise(justFinished);
     setAppState('cruises-list');
-
-    // Optionally auto-open order sheet for the just-finished cruise
-    // const justFinished = updatedCruises.find(c => c.id === activeCruiseId);
-    // if (justFinished) setOrderCruise(justFinished);
   };
+  
+  
+  
+    // 4) Auto-open the OrderSheet for that finished cruise
+    //    setTimeout lets the UI switch back to the library first, then shows the sheet.
+    if (justFinished) {
+      setTimeout(() => setOrderCruise(justFinished), 0);
+    }
+  };
+  
 
   const handleSelectCruise = (cruiseId) => {
     const cruise = allCruises.find(c => c.id === cruiseId);
@@ -1337,17 +1390,7 @@ export default function HomePage() {
             <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">MomentsAtSea</h1>
             <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
           </div>
-          {finishedCruises.length > 0 && appState === 'cruises-list' && (
-  <div className="mt-4 flex justify-center">
-    <button
-      type="button"
-      onClick={() => setShowOrderPicker(true)}
-      className="bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-bold px-5 py-3 rounded-xl shadow-lg shadow-amber-500/25 ring-2 ring-amber-300/40 focus:outline-none focus-visible:ring-4 focus-visible:ring-amber-300/60 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transform hover:scale-[1.02] transition-all"
-    >
-      Create Keepsakes
-    </button>
-  </div>
-)}
+          
 
           {appState === 'cruises-list' ? (
             <>
