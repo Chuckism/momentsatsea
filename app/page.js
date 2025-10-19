@@ -1,6 +1,11 @@
 'use client';
 // build: 2025-10-18T00:00-0500
 
+// Route segment config (must be top-level)
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { zipSync, strToU8 } from 'fflate';
@@ -533,7 +538,7 @@ function CruiseSetup({ onSave, cruiseDetails, onDetailsChange }) {
                         <option value="disembarkation">Disembark</option>
                       </select>
                       <div className="pointer-events-none absolute right-3 top-1/2 mt-2 text-slate-400">
-                        <ChevronDown className="h-5 h-5" />
+                        <ChevronDown className="h-5 w-5" />
                       </div>
                     </div>
                     {(day.type === 'port' || day.type === 'embarkation' || day.type === 'disembarkation') && (
@@ -1372,6 +1377,8 @@ export default function HomePage() {
         onClose={() => setOrderCruise(null)}
         cruise={orderCruise}
       />
+      <AuthSheet open={showAuth} onClose={() => setShowAuth(false)} />
+
     </main>
   );
 }

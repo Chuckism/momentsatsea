@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import { X, Mail, LogOut, CloudDownload, User } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
-import { restoreLatest } from '../../lib/backupSync';
+import { supabaseConfigured, restoreLatestBackup } from '../../lib/backupSync';
 
 export default function AuthSheet({ open, onClose, onSignedIn }) {
   const [email, setEmail] = useState('');
@@ -12,19 +12,23 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
 
   // Load current user and react to auth changes
   useEffect(() => {
-    let unsub = () => {};
+    if (!supabase) return;
+    let subscription;
+
     (async () => {
-      if (!supabase) return;
       const { data: session } = await supabase.auth.getSession();
       const { data: userRes } = await supabase.auth.getUser();
       setUser(userRes?.user || session?.session?.user || null);
-      unsub = supabase.auth.onAuthStateChange((_event, session) => {
-        const u = session?.user || null;
+
+      const res = supabase.auth.onAuthStateChange((_event, sess) => {
+        const u = sess?.user || null;
         setUser(u);
         if (u && onSignedIn) onSignedIn(u);
-      }).data?.subscription?.unsubscribe ?? (() => {});
+      });
+      subscription = res.data?.subscription;
     })();
-    return () => unsub?.();
+
+    return () => subscription?.unsubscribe?.();
   }, [onSignedIn]);
 
   if (!open) return null;
@@ -43,7 +47,9 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
     try {
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: { emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined },
+        options: {
+          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
+        },
       });
       if (error) throw error;
       setStatus('Magic link sent! Check your email.');
@@ -58,15 +64,35 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
     try {
       await supabase?.auth.signOut();
       setStatus('Signed out.');
-    } catch {
-      /* ignore */
-    }
+    } catch {/* ignore */}
   };
 
+  function pickCruiseId() {
+    try {
+      const storedActive = localStorage.getItem('activeCruiseId');
+      const all = JSON.parse(localStorage.getItem('allCruises') || '[]');
+      if (storedActive && all.find(c => String(c.id) === String(storedActive))) return storedActive;
+      const active = all.find(c => c.status === 'active');
+      if (active) return active.id;
+      return all[0]?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   const doRestore = async () => {
+    if (!supabaseConfigured()) {
+      setStatus('Cloud backup not configured.');
+      return;
+    }
+    const cruiseId = pickCruiseId();
+    if (!cruiseId) {
+      setStatus('No cruises found to restore into.');
+      return;
+    }
     setStatus('Restoring from cloud…');
-    const ok = await restoreLatest();
-    setStatus(ok ? 'Restore complete.' : 'No cloud backup found.');
+    const ok = await restoreLatestBackup(cruiseId);
+    setStatus(ok ? 'Restore complete.' : 'No cloud backup found for this cruise.');
   };
 
   return (
@@ -117,6 +143,7 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
                 <button
                   onClick={doRestore}
                   className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 rounded-xl"
+                  title="Restores the latest backup for your current/active cruise"
                 >
                   <span className="inline-flex items-center gap-2">
                     <CloudDownload className="w-5 h-5" /> Restore from Cloud
