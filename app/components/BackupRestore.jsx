@@ -8,6 +8,27 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
   const fileRef = useRef(null);
   const hasCloud = supabaseConfigured();
 
+  // Choose a cruise to restore into (prefers active, then stored active id, then single/first)
+  function chooseCruiseIdForRestore() {
+    try {
+      const stored = typeof window !== 'undefined' ? localStorage.getItem('activeCruiseId') : null;
+      const byId = new Map((allCruises || []).map(c => [String(c.id), c]));
+      if (stored && byId.has(String(stored))) return stored;
+
+      const active = (allCruises || []).find(c => c.status === 'active');
+      if (active) return active.id;
+
+      if ((allCruises || []).length === 1) return allCruises[0].id;
+
+      const finished = (allCruises || []).find(c => c.status === 'finished');
+      if (finished) return finished.id;
+
+      return (allCruises || [])[0]?.id ?? null;
+    } catch {
+      return null;
+    }
+  }
+
   const exportJSON = () => {
     try {
       const cruises = JSON.parse(localStorage.getItem('allCruises') || '[]');
@@ -90,16 +111,31 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
 
   const handleRestoreFromCloud = async () => {
     if (!hasCloud) return;
+    const targetId = chooseCruiseIdForRestore();
+    if (!targetId) {
+      alert('No cruises available to restore into yet.');
+      return;
+    }
+
     setBusy(true);
     try {
-      const ok = await restoreLatestBackup();
+      const ok = await restoreLatestBackup(targetId);
       if (ok) {
         // Reload list from localStorage to reflect restored data
         const cruises = JSON.parse(localStorage.getItem('allCruises') || '[]');
         setAllCruises?.(cruises);
+
+        // If the restored cruise exists, make it active and jump to journaling
+        const restored = cruises.find(c => String(c.id) === String(targetId));
+        if (restored) {
+          localStorage.setItem('activeCruiseId', restored.id);
+          setActiveCruiseId?.(restored.id);
+          setAppState?.('journaling');
+        }
+
         alert('Cloud restore complete! Your cruises and entries were updated.');
       } else {
-        alert('No cloud backups found for this device/project yet.');
+        alert('No cloud backups found for this cruise yet.');
       }
     } catch (e) {
       alert('Cloud restore failed. See console for details.');
@@ -150,6 +186,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
               className={`text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors ${
                 busy ? 'bg-emerald-700/60 cursor-wait' : 'bg-emerald-600 hover:bg-emerald-700'
               }`}
+              title="Restores the latest backup for your active cruise"
             >
               Restore from Cloud
             </button>

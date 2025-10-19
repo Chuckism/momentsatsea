@@ -1,6 +1,6 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
-import { X, Check, ShieldCheck, Film, FileText, Sparkles, Calendar, Ship, MapPin } from 'lucide-react';
+import { useEffect, useState, useMemo } from 'react';
+import { X, Check, ShieldCheck, Film, FileText, Sparkles, Ship, Calendar } from 'lucide-react';
 
 const PACKAGES = [
   {
@@ -25,50 +25,38 @@ function formatUSD(cents) {
   return (cents / 100).toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 }
 
-export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
+export default function OrderSheet({ open, onClose, cruise }) {
   const [selected, setSelected] = useState('bundle_masterpiece');
   const [removeWM, setRemoveWM] = useState(false);
   const [status, setStatus] = useState('idle'); // idle | saving | done
   const [isOnline, setIsOnline] = useState(true);
 
-  // Derive friendly cruise info for the header
-  const { cruiseTitle, dateRange, portShort } = useMemo(() => {
-    const title = cruise?.homePort?.split(',')[0] ? `${cruise.homePort.split(',')[0]} Adventure` : 'Cruise Adventure';
-    const start = cruise?.departureDate ? new Date(`${cruise.departureDate}T00:00:00`) : null;
-    const end = cruise?.returnDate ? new Date(`${cruise.returnDate}T00:00:00`) : null;
-    const range = start && end && !Number.isNaN(start) && !Number.isNaN(end)
-      ? `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} – ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-      : 'Dates not set';
-    const port = cruise?.homePort?.split(',')[0] || '';
-    return { cruiseTitle: title, dateRange: range, portShort: port };
-  }, [cruise]);
-
   useEffect(() => {
-    const up = () => setIsOnline(navigator.onLine);
+    const up = () => setIsOnline(typeof navigator !== 'undefined' ? navigator.onLine : true);
     up();
     window.addEventListener('online', up);
     window.addEventListener('offline', up);
     return () => { window.removeEventListener('online', up); window.removeEventListener('offline', up); };
   }, []);
 
-  // Reset when sheet closes/opens
+  // Reset when closed
   useEffect(() => {
     if (!open) { setStatus('idle'); setSelected('bundle_masterpiece'); setRemoveWM(false); }
   }, [open]);
 
-  // Auto-focus the sheet when it opens (helps “auto-open” feel deterministic)
-  useEffect(() => {
-    if (open) {
-      // slight delay lets the backdrop mount
-      const t = setTimeout(() => {
-        const el = document.getElementById('order-sheet-root');
-        el?.focus?.();
-      }, 0);
-      return () => clearTimeout(t);
-    }
-  }, [open]);
-
   if (!open) return null;
+
+  // --- cruise summary (header chips) ---
+  const portName = cruise?.homePort?.split(',')[0] || 'Cruise';
+  const dateRange = useMemo(() => {
+    if (!cruise?.departureDate || !cruise?.returnDate) return 'Dates not set';
+    const start = new Date(cruise.departureDate + 'T00:00:00');
+    const end   = new Date(cruise.returnDate + 'T00:00:00');
+    if (Number.isNaN(start) || Number.isNaN(end)) return 'Dates not set';
+    const s = start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const e = end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${s} – ${e}`;
+  }, [cruise?.departureDate, cruise?.returnDate]);
 
   const chosen = PACKAGES.find(p => p.id === selected);
   const subtotal = chosen.price;
@@ -77,54 +65,58 @@ export default function OrderSheet({ open, onClose, cruise, onSubmit }) {
 
   const startOrder = async () => {
     setStatus('saving');
-    // Build a minimal order payload (works offline)
-    const order = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      cruiseId: cruise?.id || null,
-      cruiseMeta: {
-        title: cruiseTitle,
-        homePort: cruise?.homePort || null,
-        departureDate: cruise?.departureDate || null,
-        returnDate: cruise?.returnDate || null,
-      },
-      packageId: selected,
-      removeWatermark: removeWM,
-      subtotal,
-      watermarkAddon: wmAddon,
-      total,
-      createdAt: new Date().toISOString(),
-      isOnlineAtSubmit: isOnline,
-    };
 
-    // If parent provided a callback, let it try to sync
-    try { await onSubmit?.(order); } catch {}
+    // In a future version we’ll persist this to Supabase.
+    // For now, save a local “pending order” keyed to the cruise.
+    try {
+      const payload = {
+        id: Date.now().toString(),
+        cruiseId: cruise?.id || null,
+        packageId: selected,
+        removeWatermark: removeWM,
+        totalCents: total,
+        createdAt: new Date().toISOString(),
+      };
+      const key = 'pendingKeepsakeOrders';
+      const all = JSON.parse(localStorage.getItem(key) || '[]');
+      all.push(payload);
+      localStorage.setItem(key, JSON.stringify(all));
 
-    // Mock local save UX
-    await new Promise(r => setTimeout(r, 700));
-    setStatus('done');
+      // mock delay
+      await new Promise(r => setTimeout(r, 700));
+      setStatus('done');
+    } catch {
+      alert('Could not save your order locally. Please try again.');
+      setStatus('idle');
+    }
   };
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/60 p-0 md:p-6" id="order-sheet-backdrop">
-      <div
-        className="w-full md:max-w-2xl bg-slate-900 rounded-t-2xl md:rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden outline-none"
-        id="order-sheet-root"
-        tabIndex={-1}
-        aria-modal="true"
-        role="dialog"
-      >
+    <div className="fixed inset-0 z-[70] flex items-end md:items-center justify-center bg-black/60 p-0 md:p-6">
+      <div className="w-full md:max-w-2xl bg-slate-900 rounded-t-2xl md:rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden">
+        {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/60">
           <div>
-            <div className="text-sm uppercase tracking-wider text-slate-400">Create Your Keepsakes</div>
-            <div className="text-xl font-bold text-white">{cruiseTitle}</div>
-            <div className="mt-1 text-slate-400 flex items-center gap-3 text-sm">
-              <span className="inline-flex items-center gap-1"><Calendar className="w-4 h-4" /> {dateRange}</span>
-              {portShort ? <span className="inline-flex items-center gap-1"><MapPin className="w-4 h-4" /> {portShort}</span> : null}
-            </div>
+            <div className="text-sm uppercase tracking-wider text-slate-400">Create Keepsakes</div>
+            <div className="text-xl font-bold text-white">Transform Your Journal</div>
           </div>
           <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-white">
             <X className="w-6 h-6" />
           </button>
+        </div>
+
+        {/* Cruise summary strip */}
+        <div className="px-5 pt-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-2 bg-slate-800/70 text-slate-200 border border-slate-700/60 rounded-lg px-3 py-1.5">
+              <Ship className="w-4 h-4 text-slate-300" />
+              <span className="font-medium">{portName} Adventure</span>
+            </span>
+            <span className="inline-flex items-center gap-2 bg-slate-800/70 text-slate-300 border border-slate-700/60 rounded-lg px-3 py-1.5">
+              <Calendar className="w-4 h-4 text-slate-300" />
+              <span>{dateRange}</span>
+            </span>
+          </div>
         </div>
 
         <div className="p-5 md:p-6 space-y-5">
