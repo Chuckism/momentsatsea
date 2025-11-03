@@ -1,19 +1,26 @@
 'use client';
 // build: 2025-10-18T00:00-0500
 
-
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Ship, MapPin, Calendar, Anchor, X, Upload, Image, Plus, Trash2, ChevronDown } from 'lucide-react';
 import { zipSync, strToU8 } from 'fflate';
+import { ensureFamily } from "../lib/familyLink";
 
 // UI components
 import OrderSheet from "./components/OrderSheet";
 import BackupRestore from "./components/BackupRestore";
 import AuthSheet from "./components/AuthSheet";
 
-
 // Supabase backup (offline-first safety net)
 import { queueBackupAndSync } from "../lib/backupSync";
+import { createClient } from '@supabase/supabase-js';
+
+if (typeof window !== 'undefined' && !window.supabase) {
+  window.supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  );
+}
 
 /* =========================
    IndexedDB: Offline Photos
@@ -97,11 +104,9 @@ function supportsWebP() {
     return c.toDataURL('image/webp').startsWith('data:image/webp');
   } catch { return false; }
 }
-// Treat a cruise as finished if status === 'finished' or legacy 'complete', or it has a finishedAt timestamp.
 const isCruiseFinished = (c) =>
   c?.status === 'finished' || c?.status === 'complete' || !!c?.finishedAt;
 
-/** Downscale & convert large images to save space; convert HEIC if needed */
 async function normalizePhotoFile(inputFile, { maxDim = 2000 } = {}) {
   const isHEIC = /image\/heic|image\/heif/i.test(inputFile.type);
   const canCreateBitmap = 'createImageBitmap' in window;
@@ -287,7 +292,6 @@ function CruisesLibrary({ cruises, onSelectCruise, onStartNew, onDeleteCruise, o
             {cruise.label || `${cruise.homePort?.split(',')[0] || 'Cruise'} Adventure`}
           </h3>
 
-          {/* Subtle details line */}
           <div className="text-slate-400 text-sm mb-2">
             {cruise.homePort?.split(',')[0] || '—'}
             {cruise.departureDate && cruise.returnDate ? (
@@ -627,11 +631,22 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
       const file = await normalizePhotoFile(raw);
       const id = makeId();
       const buf = await file.arrayBuffer();
-      await putPhoto({ id, cruiseId, arrayBuffer: buf, type: file.type, caption: '' });
-      out.push({ id, caption: '' });
+  
+      // 📝 Prompt the user for a short note about the photo
+      const note = prompt(`Add a short note about this photo (“${file.name}”):`)?.trim() || '';
+  
+      await putPhoto({
+        id,
+        cruiseId,
+        arrayBuffer: buf,
+        type: file.type,
+        caption: note
+      });
+      out.push({ id, caption: note });
     }
     return out;
   }
+  
 
   const handleActivityPhotoUpload = async (activityId, e) => {
     const files = Array.from(e.target.files || []);
@@ -711,7 +726,6 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
     try {
       localStorage.setItem(`cruiseJournalEntries_${cruiseDetails.id}`, payload);
 
-      // Cloud safety net (text-only, offline-first)
       try { queueBackupAndSync(cruiseDetails.id); } catch {}
 
       setSavedEntries(next);
@@ -824,10 +838,36 @@ function DailyJournal({ cruiseDetails, onFinishCruise }) {
                   <div className="pt-2 border-t border-slate-600/30 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-slate-400">📸 Photos for this activity</span>
+                    
                       <label className="cursor-pointer bg-slate-600/50 hover:bg-slate-600/70 text-slate-300 text-sm px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2">
-                        <Upload className="w-4 h-4" /> Upload
-                        <input type="file" multiple accept="image/*" capture="environment" onChange={(e) => handleActivityPhotoUpload(activity.id, e)} className="hidden" />
-                      </label>
+  <Upload className="w-4 h-4" /> Upload
+  <input
+    type="file"
+    multiple
+    accept="image/*"
+    capture="environment"
+    onChange={async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      const newPhotos = [];
+      for (const file of files) {
+        const caption = prompt(`Add a note for “${file.name}” (optional):`)?.trim() || '';
+        const normalized = await normalizePhotoFile(file);
+        const id = makeId();
+        const buf = await normalized.arrayBuffer();
+        await putPhoto({ id, cruiseId: cruiseDetails.id, arrayBuffer: buf, type: normalized.type, caption });
+        newPhotos.push({ id, caption });
+      }
+      const updated = (currentEntry.activities || []).map(a =>
+        a.id === activity.id ? { ...a, photos: [...(a.photos || []), ...newPhotos] } : a
+      );
+      updateEntry('activities', updated);
+      e.target.value = ''; // reset input
+    }}
+    className="hidden"
+  />
+</label>
+
                     </div>
                     {activity.photos?.length > 0 && (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1127,8 +1167,7 @@ function PhotoZipExport({ allCruises }) {
 /* =======================
    Label helpers (Chuck_1)
    ======================= */
-function pad(n) { return String(n); } // simple
-
+function pad(n) { return String(n); }
 function computeNextCruiseIndex(cruises, handle) {
   const prefix = `${handle}_`;
   const existing = cruises
@@ -1139,11 +1178,9 @@ function computeNextCruiseIndex(cruises, handle) {
       const maybeNum = Number(parts[parts.length - 1]);
       return Number.isFinite(maybeNum) ? maybeNum : 0;
     });
-
   const maxExisting = existing.length ? Math.max(...existing) : 0;
   return maxExisting + 1;
 }
-
 function makeCruiseLabel(cruises, handle) {
   const next = computeNextCruiseIndex(cruises, handle);
   return `${handle}_${pad(next)}`;
@@ -1155,18 +1192,29 @@ export default function HomePage() {
   const [allCruises, setAllCruises] = useState([]);
   const [activeCruiseId, setActiveCruiseId] = useState(null);
 
-  // Store cruise we want to order (opens OrderSheet)
   const [orderCruise, setOrderCruise] = useState(null);
-  // Hold a cruise to open after returning to the library (timing fix)
   const [pendingOrderCruise, setPendingOrderCruise] = useState(null);
-  const [showAuth, setShowAuth] = useState(false);
 
+  // ✅ showAuth with localStorage persistence, no duplicate declarations
+  const [showAuth, setShowAuth] = useState(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('showAuth');
+        return saved ? JSON.parse(saved) : false;
+      } catch {}
+    }
+    return false;
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem('showAuth', JSON.stringify(showAuth));
+    } catch {}
+  }, [showAuth]);
 
   const finishedCruises = useMemo(() => allCruises.filter(isCruiseFinished), [allCruises]);
 
   useEffect(() => {
     if (navigator.storage?.persist) navigator.storage.persist();
-
     const stored = localStorage.getItem('allCruises');
     if (stored) {
       const cruises = JSON.parse(stored);
@@ -1181,7 +1229,6 @@ export default function HomePage() {
     }
   }, []);
 
-  // After switching back to the library, open OrderSheet if requested
   useEffect(() => {
     if (appState === 'cruises-list' && pendingOrderCruise) {
       setOrderCruise(pendingOrderCruise);
@@ -1192,26 +1239,96 @@ export default function HomePage() {
   const [cruiseDetails, setCruiseDetails] = useState({ homePort:'', departureDate:'', returnDate:'', itinerary:[] });
   const handleDetailsChange = (updates) => setCruiseDetails(prev => ({ ...prev, ...updates }));
 
-  const handleSaveSetup = (itinerary) => {
-    // Build a default label like Chuck_1 / Miami_1 etc.
-    const homeCity = (cruiseDetails.homePort || 'Cruise').split(',')[0].trim() || 'Cruise';
-    const handle = localStorage.getItem('userHandle') || homeCity;
+  const handleSaveSetup = async (itinerary) => {
+    // ✅ get signed-in user from Supabase (if available)
+    let user = null;
+    try {
+      if (typeof window !== "undefined" && window.supabase) {
+        const { data: userRes } = await window.supabase.auth.getUser();
+        user = userRes?.user || null;
+      }
+    } catch (_) {
+      // ignore; stay offline-first
+    }
+
+   // ✅ Ensure family linkage (if user logged in)
+let familyId = null;
+if (user) {
+  try {
+    familyId = await ensureFamily(user);
+    if (!familyId) {
+      console.warn("[FamilyLink] no familyId returned, retrying once...");
+      await new Promise((r) => setTimeout(r, 1000)); // wait 1 second
+      familyId = await ensureFamily(user);
+    }
+    console.log("[FamilyLink] Final familyId before insert:", familyId);
+  } catch (err) {
+    console.warn("[FamilyLink] skipped due to error", err);
+  }
+}
+
+
+    const homeCity = (cruiseDetails.homePort || "Cruise").split(",")[0].trim() || "Cruise";
+    const handle = localStorage.getItem("userHandle") || homeCity;
 
     const newCruise = {
       ...cruiseDetails,
       itinerary: itinerary || cruiseDetails.itinerary,
       id: Date.now().toString(),
       createdAt: new Date().toISOString(),
-      status: 'active',
+      status: "active",
       label: makeCruiseLabel(allCruises, handle),
+      // 👇 add linkage for local copy (useful for future sync)
+      created_by: user?.id || null,
+      family_id: familyId || null,
     };
+
+ // ✅ Try inserting into Supabase (non-blocking / best-effort)
+if (typeof window !== "undefined" && window.supabase && user) {
+  try {
+    console.log("[Insert Debug] user.id:", user?.id);
+    console.log("[Insert Debug] familyId:", familyId);
+    console.log("[Insert Debug] newCruise object:", newCruise);
+
+    const { data, error } = await window.supabase
+      .from("projects")
+      .insert({
+        name: newCruise.label,
+        home_port: newCruise.homePort,
+        departure_date: newCruise.departureDate,
+        return_date: newCruise.returnDate,
+        itinerary: newCruise.itinerary, // JSONB column recommended
+        status: newCruise.status,
+        created_by: user.id,
+        family_id: familyId,
+      })
+      .select("id");
+
+    if (error) {
+      console.error(
+        "[Supabase] Insert failed:",
+        error.message || error,
+        error.details || ""
+      );
+    } else {
+      console.log("[Supabase] Insert success:", data);
+    }
+  } catch (err) {
+    console.error("[Supabase] Network or insert exception:", err);
+  }
+} else {
+  console.log("[Offline] user not signed in; skipping Supabase insert");
+}
+
+
+    // ✅ Preserve your offline-first flow
     const updatedCruises = [...allCruises, newCruise];
     setAllCruises(updatedCruises);
     setActiveCruiseId(newCruise.id);
-    localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
-    localStorage.setItem('activeCruiseId', newCruise.id);
+    localStorage.setItem("allCruises", JSON.stringify(updatedCruises));
+    localStorage.setItem("activeCruiseId", newCruise.id);
     setCruiseDetails(newCruise);
-    setAppState('journaling');
+    setAppState("journaling");
   };
 
   const handleStartNewCruise = () => {
@@ -1221,25 +1338,17 @@ export default function HomePage() {
   };
 
   const handleFinishCruise = () => {
-    // Mark as finished
     const updatedCruises = allCruises.map(c =>
       c.id === activeCruiseId
         ? { ...c, status: 'finished', finishedAt: new Date().toISOString() }
         : c
     );
-
-    // Capture the cruise we just finished (BEFORE clearing activeCruiseId)
     const justFinished = updatedCruises.find(c => c.id === activeCruiseId) || null;
-
-    // Save and return to library
     setAllCruises(updatedCruises);
     localStorage.setItem('allCruises', JSON.stringify(updatedCruises));
     localStorage.removeItem('activeCruiseId');
     setActiveCruiseId(null);
-
-    // Tell the UI to open OrderSheet AFTER it finishes switching views
     if (justFinished) setPendingOrderCruise(justFinished);
-
     setAppState('cruises-list');
   };
 
@@ -1279,43 +1388,45 @@ export default function HomePage() {
 
       <div className="relative z-10 flex flex-col items-center justify-start p-6 sm:p-8 md:p-12 overflow-x-hidden">
         <div className="w-full max-w-3xl overflow-x-hidden">
-        <div className="text-center mb-12 space-y-2">
-  {/* Account button only on the library screen */}
-  {appState === 'cruises-list' && (
-    <div className="w-full flex justify-end mb-2">
-      <button
-        type="button"
-        onClick={() => setShowAuth(true)}
-        className="text-sm bg-slate-700/60 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg"
-      >
-        Account
-      </button>
-    </div>
-  )}
+          <div className="text-center mb-12 space-y-2">
+            {/* Account button only on the library screen */}
+            {appState === 'cruises-list' && (
+              <div className="w-full flex justify-end mb-2">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation(); // ✅ prevents any accidental auto-trigger or parent event bubbling
+                    setShowAuth(true);   // ✅ only opens when manually clicked
+                  }}
+                  className="text-sm bg-slate-700/60 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg transition-colors"
+                >
+                  Account
+                </button>
+              </div>
+            )}
 
-  {/* Existing "Back to My Cruises" button — unchanged */}
-  {appState !== 'cruises-list' && (
-    <button
-      type="button"
-      onClick={() => {
-        if (confirm('Return to cruise library? Any unsaved changes will be lost.')) {
-          setAppState('cruises-list');
-          setActiveCruiseId(null);
-          localStorage.removeItem('activeCruiseId');
-        }
-      }}
-      className="mb-4 text-slate-400 hover:text-white transition-colors flex items-center gap-2 mx-auto"
-    >
-      <span>←</span> Back to My Cruises
-    </button>
-  )}
+            {/* Back to library */}
+            {appState !== 'cruises-list' && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (confirm('Return to cruise library? Any unsaved changes will be lost.')) {
+                    setAppState('cruises-list');
+                    setActiveCruiseId(null);
+                    localStorage.removeItem('activeCruiseId');
+                  }
+                }}
+                className="mb-4 text-slate-400 hover:text-white transition-colors flex items-center gap-2 mx-auto"
+              >
+                <span>←</span> Back to My Cruises
+              </button>
+            )}
 
-  <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">
-    MomentsAtSea
-  </h1>
-  <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
-</div>
-
+            <h1 className="text-5xl sm:text-6xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent animate-gradient">
+              MomentsAtSea
+            </h1>
+            <p className="text-slate-400 text-lg">Your cruise memories, beautifully preserved</p>
+          </div>
 
           {appState === 'cruises-list' ? (
             <>
@@ -1326,13 +1437,76 @@ export default function HomePage() {
                 onDeleteCruise={handleDeleteCruise}
                 onOpenOrder={(cruise) => setOrderCruise(cruise)}
               />
+
               <BackupRestore
                 allCruises={allCruises}
                 setAllCruises={setAllCruises}
                 setActiveCruiseId={setActiveCruiseId}
                 setAppState={setAppState}
               />
+
               <PhotoZipExport allCruises={allCruises} />
+
+              {/* Shared Cruises Import (Supabase) */}
+              <div className="mt-10 rounded-xl bg-slate-800/50 border border-slate-700/50 p-6">
+                <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2">
+                  🌐 Shared Cruise Library
+                </h3>
+                <p className="text-slate-400 text-sm mb-4">
+                  Browse cruises shared by other travelers. Import an itinerary to your own library.
+                </p>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const { data, error } = await window.supabase
+                        .from('shared_cruises')
+                        .select('id, label, homePort, departureDate, returnDate')
+                        .limit(10);
+
+                      if (error) throw error;
+                      if (!data?.length) return alert('No shared cruises available yet.');
+
+                      const pick = prompt(
+                        'Shared Cruises:\n' +
+                        data.map((c, i) =>
+                          `${i + 1}. ${c.label || c.homePort || 'Untitled'} (${c.departureDate}–${c.returnDate})`
+                        ).join('\n\n') +
+                        '\n\nEnter the number of the cruise you want to import:'
+                      );
+                      const idx = Number(pick) - 1;
+                      if (Number.isNaN(idx) || !data[idx]) return;
+
+                      const selected = data[idx];
+                      const { data: full, error: err2 } = await window.supabase
+                        .from('shared_cruises')
+                        .select('*')
+                        .eq('id', selected.id)
+                        .single();
+                      if (err2) throw err2;
+
+                      const importedCruise = {
+                        ...full,
+                        id: Date.now().toString(),
+                        label: (full.label || 'Untitled') + ' (Imported)',
+                        status: 'active',
+                        createdAt: new Date().toISOString(),
+                      };
+
+                      const updated = [...allCruises, importedCruise];
+                      setAllCruises(updated);
+                      localStorage.setItem('allCruises', JSON.stringify(updated));
+                      alert('Imported cruise successfully! You can now view it in My Cruises.');
+                    } catch (e) {
+                      console.error(e);
+                      alert('Could not import shared cruises.');
+                    }
+                  }}
+                  className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white font-medium px-4 py-2 rounded-lg"
+                >
+                  View & Import Shared Cruises
+                </button>
+              </div>
             </>
           ) : appState === 'setup' ? (
             <CruiseSetup onSave={handleSaveSetup} cruiseDetails={cruiseDetails} onDetailsChange={(u) => setCruiseDetails(prev => ({ ...prev, ...u }))} />
@@ -1359,7 +1533,10 @@ export default function HomePage() {
       `}</style>
 
       <style jsx>{`
-        @keyframes gradient { 0%, 100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+        @keyframes gradient {
+          0%, 100% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+        }
         .animate-gradient { background-size: 200% auto; animation: gradient 3s ease infinite; }
         @keyframes slide-in { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
         .animate-slide-in { animation: slide-in 0.3s ease-out; }
@@ -1367,14 +1544,13 @@ export default function HomePage() {
         .animate-slide-down { animation: slide-down 0.5s ease-out; }
       `}</style>
 
-      {/* Order sheet tied to the selected (finished) cruise */}
+      {/* Order & Auth sheets */}
       <OrderSheet
         open={!!orderCruise}
         onClose={() => setOrderCruise(null)}
         cruise={orderCruise}
       />
       <AuthSheet open={showAuth} onClose={() => setShowAuth(false)} />
-
     </main>
   );
 }

@@ -3,6 +3,9 @@ import { useEffect, useState } from 'react';
 import { X, Mail, LogOut, CloudDownload, User } from 'lucide-react';
 import { supabase } from '../../lib/supabaseClient';
 import { supabaseConfigured, restoreLatestBackup } from '../../lib/backupSync';
+import { ensureFamily } from '../../lib/familyLink';
+
+
 
 export default function AuthSheet({ open, onClose, onSignedIn }) {
   const [email, setEmail] = useState('');
@@ -11,25 +14,67 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
   const [user, setUser] = useState(null);
 
   // Load current user and react to auth changes
+useEffect(() => {
+  if (!supabase) return;
+  let subscription;
+
+  (async () => {
+    const { data: session } = await supabase.auth.getSession();
+    const { data: userRes } = await supabase.auth.getUser();
+    const u = userRes?.user || session?.session?.user || null;
+    setUser(u);
+
+    if (u) {
+      console.log('🔁 calling ensureFamily for user:', u);
+      setTimeout(() => ensureFamily(u), 500);
+    }
+    
+
+// ✅ React to auth state changes
+const res = supabase.auth.onAuthStateChange((_event, sess) => {
+  const newUser = sess?.user || null;
+  setUser(newUser);
+
+  if (newUser) {
+    console.log('✅ User signed in, calling ensureFamily:', newUser);
+    ensureFamily(newUser); // 👈 immediate, no timeout
+    if (onSignedIn) onSignedIn(newUser);
+    onClose?.(); // auto-close after login
+  } else {
+    console.log('ℹ️ User signed out or session expired');
+  }
+});
+
+subscription = res.data?.subscription;
+
+
+    subscription = res.data?.subscription;
+  })();
+
+  return () => subscription?.unsubscribe?.();
+}, [onSignedIn]);
+
+
+  // ✅ Automatically close the AuthSheet once user is signed in
   useEffect(() => {
-    if (!supabase) return;
-    let subscription;
+    if (user?.id && onClose) {
+      console.log('✅ Auto-closing AuthSheet after login');
+      const timer = setTimeout(() => onClose(), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [user?.id]);
 
-    (async () => {
-      const { data: session } = await supabase.auth.getSession();
-      const { data: userRes } = await supabase.auth.getUser();
-      setUser(userRes?.user || session?.session?.user || null);
-
-      const res = supabase.auth.onAuthStateChange((_event, sess) => {
-        const u = sess?.user || null;
-        setUser(u);
-        if (u && onSignedIn) onSignedIn(u);
-      });
-      subscription = res.data?.subscription;
-    })();
-
-    return () => subscription?.unsubscribe?.();
-  }, [onSignedIn]);
+  // ✅ Allow closing via ESC key
+  useEffect(() => {
+    function handleKey(e) {
+      if (e.key === 'Escape' && open) {
+        console.log('🧩 AuthSheet closed via Esc');
+        onClose?.();
+      }
+    }
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, [open, onClose]);
 
   if (!open) return null;
 
@@ -45,13 +90,17 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
     setSending(true);
     setStatus('');
     try {
+      const redirectTo =
+        typeof window !== 'undefined'
+          ? `${window.location.origin}/auth/callback`
+          : undefined;
+
       const { error } = await supabase.auth.signInWithOtp({
         email,
-        options: {
-          emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
-        },
+        options: { emailRedirectTo: redirectTo },
       });
       if (error) throw error;
+
       setStatus('Magic link sent! Check your email.');
     } catch (e) {
       setStatus(e.message || 'Failed to send magic link.');
@@ -64,6 +113,7 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
     try {
       await supabase?.auth.signOut();
       setStatus('Signed out.');
+      onClose?.(); // ✅ close sheet on sign out
     } catch {/* ignore */}
   };
 
@@ -93,20 +143,39 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
     setStatus('Restoring from cloud…');
     const ok = await restoreLatestBackup(cruiseId);
     setStatus(ok ? 'Restore complete.' : 'No cloud backup found for this cruise.');
+    if (ok) onClose?.();
   };
 
   return (
     <div className="fixed inset-0 z-[80] flex items-end md:items-center justify-center bg-black/60 p-0 md:p-6">
       <div className="w-full md:max-w-md bg-slate-900 rounded-t-2xl md:rounded-2xl border border-slate-700/60 shadow-2xl overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700/60">
+
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-5 py-4 border-b border-slate-700/60"
+          role="banner"
+        >
           <div className="flex items-center gap-2">
             <User className="w-5 h-5 text-slate-300" />
             <div>
               <div className="text-sm uppercase tracking-wider text-slate-400">Account</div>
-              <div className="text-xl font-bold text-white">{user ? 'You’re signed in' : 'Sign in'}</div>
+              <div className="text-xl font-bold text-white">
+                {user ? 'You’re signed in' : 'Sign in'}
+              </div>
             </div>
           </div>
-          <button onClick={onClose} aria-label="Close" className="text-slate-400 hover:text-white">
+
+          {/* Always-active close button */}
+          <button
+            type="button"
+            aria-label="Close account sheet"
+            onClick={(e) => {
+              e.stopPropagation();
+              console.log('🧩 AuthSheet manual close triggered');
+              onClose?.();
+            }}
+            className="text-slate-400 hover:text-white focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-lg p-1.5 transition"
+          >
             <X className="w-6 h-6" />
           </button>
         </div>
