@@ -1,26 +1,27 @@
 'use client';
 import { useRef, useState } from 'react';
-import { supabaseConfigured, restoreLatestBackup } from '../../lib/backupSync';
+import { supabase } from '../../lib/supabaseClient';
+import { restoreLatestBackup } from '../../lib/backupSync';
 
 /** Export / Import (local JSON) + optional “Restore from Cloud” (Supabase). */
 export default function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppState }) {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
-  const hasCloud = supabaseConfigured();
+  const hasCloud = !!supabase;
 
   // Choose a cruise to restore into (prefers active, then stored active id, then single/first)
   function chooseCruiseIdForRestore() {
     try {
       const stored = typeof window !== 'undefined' ? localStorage.getItem('activeCruiseId') : null;
-      const byId = new Map((allCruises || []).map(c => [String(c.id), c]));
+      const byId = new Map((allCruises || []).map((c) => [String(c.id), c]));
       if (stored && byId.has(String(stored))) return stored;
 
-      const active = (allCruises || []).find(c => c.status === 'active');
+      const active = (allCruises || []).find((c) => c.status === 'active');
       if (active) return active.id;
 
       if ((allCruises || []).length === 1) return allCruises[0].id;
 
-      const finished = (allCruises || []).find(c => c.status === 'finished');
+      const finished = (allCruises || []).find((c) => c.status === 'finished');
       if (finished) return finished.id;
 
       return (allCruises || [])[0]?.id ?? null;
@@ -78,7 +79,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
 
       // Merge: overwrite same-id cruises, keep others
       const existing = JSON.parse(localStorage.getItem('allCruises') || '[]');
-      const byId = new Map(existing.map(c => [String(c.id), c]));
+      const byId = new Map(existing.map((c) => [String(c.id), c]));
       for (const c of data.allCruises) byId.set(String(c.id), c);
       const merged = Array.from(byId.values());
 
@@ -92,7 +93,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
       setAllCruises(merged);
 
       // Nice UX: jump into an active cruise if one exists in the import
-      const active = merged.find(c => c.status === 'active') || merged[0];
+      const active = merged.find((c) => c.status === 'active') || merged[0];
       if (active) {
         localStorage.setItem('activeCruiseId', active.id);
         setActiveCruiseId?.(active.id);
@@ -110,7 +111,10 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
   };
 
   const handleRestoreFromCloud = async () => {
-    if (!hasCloud) return;
+    if (!supabase) {
+      alert('Cloud backup not configured.');
+      return;
+    }
     const targetId = chooseCruiseIdForRestore();
     if (!targetId) {
       alert('No cruises available to restore into yet.');
@@ -126,7 +130,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
         setAllCruises?.(cruises);
 
         // If the restored cruise exists, make it active and jump to journaling
-        const restored = cruises.find(c => String(c.id) === String(targetId));
+        const restored = cruises.find((c) => String(c.id) === String(targetId));
         if (restored) {
           localStorage.setItem('activeCruiseId', restored.id);
           setActiveCruiseId?.(restored.id);
