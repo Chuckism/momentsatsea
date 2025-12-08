@@ -41,7 +41,7 @@ import { aiCaption } from '@/lib/ai';
 import { queueBackupAndSync } from "../lib/backupSync";
 
 // ⭐ Correct Supabase import (ONLY ONE)
-import { supabase } from "../lib/supabaseClient";
+
 
 
 
@@ -1949,7 +1949,7 @@ export default function HomePage() {
 
               <PhotoZipExport allCruises={allCruises} />
 
-              <div className="mt-10 rounded-xl bg-slate-800/50 border border-slate-700/50 p-6">
+             {/* <div className="mt-10 rounded-xl bg-slate-800/50 border border-slate-700/50 p-6">
                 <h3 className="text-xl font-bold text-white mb-3 flex items-center gap-2">
                   🌐 Shared Cruise Library
                 </h3>
@@ -2007,7 +2007,7 @@ export default function HomePage() {
                 >
                   View & Import Shared Cruises
                 </button>
-              </div>
+              </div>*/}
             </>
           ) : appState === 'setup' ? (
             <CruiseSetup onSave={handleSaveSetup} cruiseDetails={cruiseDetails} onDetailsChange={(u) => setCruiseDetails(prev => ({ ...prev, ...u }))} />
