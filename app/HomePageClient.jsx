@@ -18,7 +18,7 @@ import {
   ChevronRight, 
   Cloud 
 } from 'lucide-react';
-import PhoebePanel from "./components/PhoebePanel";
+
 import { MessageCircle } from "lucide-react";
 import { generateDaySummary } from "../lib/summaryEngine";
 
@@ -1066,7 +1066,10 @@ await putPhoto({
     const isLastDay = currentDayIndex === cruiseDetails.itinerary.length - 1;
   
     return (
-      <div className="space-y-6">
+      <div 
+        className="space-y-6 overflow-y-auto" 
+        style={{ WebkitOverflowScrolling: "touch" }}
+      >    
         {showSuccessMessage && (
           <div className="fixed top-4 right-4 z-50 bg-emerald-600 text-white px-6 py-3 rounded-lg shadow-xl flex items-center gap-2 animate-slide-in">
             <span className="text-xl">✓</span>
@@ -1873,7 +1876,7 @@ export default function HomePage() {
   };
 
   return (
-    <main className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white overflow-x-hidden">
+    <main className="min-h-screen bg-gradient-to-br ... text-white overflow-x-hidden overflow-y-auto">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/5 rounded-full blur-3xl animate-pulse"></div>
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-cyan-500/5 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '1s' }}></div>
