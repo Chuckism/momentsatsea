@@ -33,7 +33,7 @@ import SyncManager from './components/SyncManager';
 import OrderSheet from "./components/OrderSheet";
 import BackupRestore from "./components/BackupRestore";
 import AuthSheet from "./components/AuthSheet";
-import DailyHints from "./components/DailyHints";
+//import DailyHints from "./components/DailyHints";
 import DayBanner from "./components/DayBanner";
 import DailyGuidance from "./components/DailyGuidance";
 
