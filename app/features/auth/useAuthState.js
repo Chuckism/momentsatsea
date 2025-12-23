@@ -10,40 +10,45 @@ import { supabase } from "@/lib/supabaseClient";
  */
 export function useAuthState() {
   const [user, setUser] = useState(null);
-  const [status, setStatus] = useState("unknown"); 
-  // unknown | guest | authenticated | error
+  const [status, setStatus] = useState("unknown");
+  // unknown | guest | authenticated
 
   useEffect(() => {
     let mounted = true;
 
     async function init() {
-      try {
-        if (!supabase) {
-          if (mounted) {
-            setUser(null);
-            setStatus("guest");
-          }
-          return;
-        }
-
-        const { data, error } = await supabase.auth.getSession();
-        if (error) throw error;
-
-        if (!mounted) return;
-
-        if (data?.session?.user) {
-          setUser(data.session.user);
-          setStatus("authenticated");
-        } else {
-          setUser(null);
-          setStatus("guest");
-        }
-      } catch (err) {
-        console.warn("[Auth] Non-fatal auth error:", err);
+      if (!supabase) {
         if (mounted) {
           setUser(null);
           setStatus("guest");
         }
+        return;
+      }
+
+      let session = null;
+
+      try {
+        // Supabase v2
+        if (typeof supabase.auth.getSession === "function") {
+          const { data } = await supabase.auth.getSession();
+          session = data?.session ?? null;
+        }
+        // Supabase v1
+        else if (typeof supabase.auth.session === "function") {
+          session = supabase.auth.session();
+        }
+      } catch (err) {
+        console.warn("[Auth] Non-fatal auth error:", err);
+      }
+
+      if (!mounted) return;
+
+      if (session?.user) {
+        setUser(session.user);
+        setStatus("authenticated");
+      } else {
+        setUser(null);
+        setStatus("guest");
       }
     }
 
@@ -51,9 +56,10 @@ export function useAuthState() {
 
     let subscription;
     try {
-      subscription = supabase?.auth?.onAuthStateChange(
+      subscription = supabase.auth?.onAuthStateChange?.(
         (_event, session) => {
           if (!mounted) return;
+
           if (session?.user) {
             setUser(session.user);
             setStatus("authenticated");
@@ -64,7 +70,7 @@ export function useAuthState() {
         }
       );
     } catch {
-      // ignore — auth is optional
+      // auth is optional — ignore
     }
 
     return () => {
