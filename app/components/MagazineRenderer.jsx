@@ -1,7 +1,8 @@
 'use client';
 import { useMemo, useEffect, useState } from 'react';
 import { Ship, MapPin, Sun, X, Printer, Loader2, ChevronLeft, ChevronRight, Award } from 'lucide-react';
-import { getPhotoBlob } from '../HomePageClient'; 
+import { getPhotoBlob } from '@/app/lib/photoStore';
+
 
 /* ==========================================
    PHOTO COMPONENT (Reads from IndexedDB)

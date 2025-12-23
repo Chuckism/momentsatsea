@@ -2,7 +2,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Loader2, Download, Music, AlertTriangle, Play } from 'lucide-react';
 // FIX: Ensure this points to the file in the SAME directory
-import { getPhotoBlob } from '../HomePageClient'; 
+import { getPhotoBlob } from '@/app/lib/photoStore';
+
 
 /* ==========================================
    CONFIG: Video Timing & Settings

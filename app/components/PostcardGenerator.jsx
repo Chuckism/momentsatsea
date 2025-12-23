@@ -3,7 +3,8 @@ import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Download, RefreshCw, Ship, Loader2, Square, Grid, AlignCenter, ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import * as htmlToImage from 'html-to-image';
-import { getPhotoBlob } from '../HomePageClient'; 
+import { getPhotoBlob } from '@/app/lib/photoStore';
+
 
 /* ==========================================
    HELPER: Single Photo Component
