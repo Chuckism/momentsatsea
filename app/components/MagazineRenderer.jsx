@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useEffect, useState } from 'react';
 import { Ship, MapPin, Sun, X, Printer, Loader2, ChevronLeft, ChevronRight, Award } from 'lucide-react';
-import { getPhotoBlob } from '@/app/lib/photoStore';
+import { getPhotoBlob } from '@/lib/photoStore';
 
 
 /* ==========================================

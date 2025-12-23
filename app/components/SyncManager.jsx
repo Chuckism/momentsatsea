@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { Cloud, Check, RefreshCw, AlertTriangle, Loader2, Wifi, UploadCloud } from 'lucide-react';
 import { supabase } from "../../lib/supabaseClient";
-import { getPhotoBlob } from '@/app/lib/photoStore';
+import { getPhotoBlob } from '@/lib/photoStore';
 
 
 
