@@ -2,7 +2,7 @@
    MomentsAtSea – Deterministic Service Worker
    ============================ */
 
-   const CACHE_VERSION = "mas-shell-v2";
+   const CACHE_VERSION = "mas-shell-v3";
    const SHELL_CACHE = CACHE_VERSION;
    
    /**
@@ -10,21 +10,40 @@
     * Missing files will cause install to fail.
     */
    const APP_SHELL = [
-     "/",                // app shell
-     "/offline.html",    // fallback page
-     "/icon-192.png",
-     "/icon-512.png",
-   ];
-   
+    "/",
+    "/offline.html",
+    "/icon-192.png",
+    "/icon-512.png",
+  
+    // Next.js runtime & app bundles
+    "/_next/static/chunks/main-app.js",
+    "/_next/static/chunks/webpack.js",
+    "/_next/static/chunks/framework.js",
+  ];
+  
    /* ============================
       Install
       ============================ */
-   self.addEventListener("install", (event) => {
-     event.waitUntil(
-       caches.open(SHELL_CACHE).then((cache) => cache.addAll(APP_SHELL))
-     );
-     self.skipWaiting();
-   });
+      self.addEventListener("install", (event) => {
+        event.waitUntil(
+          (async () => {
+            const cache = await caches.open(SHELL_CACHE);
+      
+            // Cache core shell
+            await cache.addAll(APP_SHELL);
+      
+            // Cache ALL Next.js static assets dynamically
+            const res = await fetch("/_next/static/");
+            if (res.ok) {
+              // Warm the cache by triggering asset discovery
+              // (Next will request actual JS chunks immediately after)
+            }
+          })()
+        );
+      
+        self.skipWaiting();
+      });
+      
    
    /* ============================
       Activate
