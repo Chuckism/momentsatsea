@@ -1,11 +1,10 @@
-const CACHE_NAME = "mas-cache-v15";
+const CACHE_NAME = "mas-cache-v16";
 
 const PRECACHE_ASSETS = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
   "/globals.css",
-  "/offline.html",
   "/favicon.ico",
   "/icon-192.png",
   "/icon-512.png"
@@ -30,26 +29,29 @@ self.addEventListener("activate", (event) => {
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
 
+  // THE RE-ENTRY LOCK: 
+  // If the tablet asks for a page (navigate) and we are offline, 
+  // FORCE it to show the main app shell immediately.
   if (event.request.mode === "navigate") {
     event.respondWith(
-      caches.match("/").then((cachedResponse) => {
-        return cachedResponse || fetch(event.request).catch(() => caches.match("/offline.html"));
+      fetch(event.request).catch(() => {
+        return caches.match("/");
       })
     );
     return;
   }
 
+  // FOR ALL OTHER FILES (CSS, JS, IMAGES):
   event.respondWith(
     caches.match(event.request).then((cached) => {
       return cached || fetch(event.request).then((response) => {
-        if (!response || response.status !== 200 || response.type !== 'basic') {
-          return response;
-        }
+        // Cache new assets as we find them
         const copy = response.clone();
         caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
       }).catch(() => {
-        return new Response("Offline resource not available", { status: 503 });
+        // If an image is missing, just fail gracefully
+        return new Response("Offline", { status: 503 });
       });
     })
   );
