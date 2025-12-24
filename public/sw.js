@@ -2,7 +2,7 @@
    MomentsAtSea – Deterministic Service Worker
    ============================ */
 
-   const CACHE_VERSION = "mas-shell-v1";
+   const CACHE_VERSION = "mas-shell-v2";
    const SHELL_CACHE = CACHE_VERSION;
    
    /**
