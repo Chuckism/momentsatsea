@@ -1,118 +1,99 @@
 /* ============================
-   MomentsAtSea - Deterministic Service Worker
+   MomentsAtSea - Optimized PWA Service Worker
    ============================ */
 
-   const CACHE_VERSION = "mas-shell-v6";
+   const CACHE_VERSION = "mas-shell-v7"; // Incremented version
    const CACHE_NAME = CACHE_VERSION;
    
-   /* ============================
-      Install
-      ============================ */
+   // Assets to cache immediately on install
+   const PRECACHE_ASSETS = [
+     "/",
+     "/index.html",
+     "/offline.html",
+     "/manifest.webmanifest", // Ensure this matches your actual filename
+     "/icon-192.png",
+     "/icon-512.png",
+     "/favicon.ico"
+   ];
+   
+   /* 1. Install - Pre-cache the App Shell */
    self.addEventListener("install", (event) => {
      event.waitUntil(
-       (async () => {
-         const cache = await caches.open(CACHE_NAME);
-   
-         // 1. Cache base shell
-         await cache.addAll([
-           "/",
-           "/offline.html",
-           "/icon-192.png",
-           "/icon-512.png",
-         ]);
-   
-         // 2. Load Next.js static build manifest (STATIC EXPORT SAFE)
-         const res = await fetch("/_next/static/_buildManifest.js");
-         if (!res.ok) return;
-   
-         const text = await res.text();
-   
-         // The manifest defines self.__BUILD_MANIFEST
-         const sandbox = {};
-         new Function("self", text)(sandbox);
-   
-         const manifest = sandbox.__BUILD_MANIFEST;
-         if (!manifest) return;
-   
-         const assets = new Set();
-   
-         Object.values(manifest).forEach((entry) => {
-           if (Array.isArray(entry)) {
-             entry.forEach((file) => {
-               if (file.endsWith(".js") || file.endsWith(".css")) {
-                 assets.add("/_next/static/" + file);
-               }
-             });
-           }
-         });
-   
-         await cache.addAll([...assets]);
-       })()
+       caches.open(CACHE_NAME).then((cache) => {
+         console.log("[SW] Pre-caching App Shell");
+         return cache.addAll(PRECACHE_ASSETS);
+       })
      );
-   
      self.skipWaiting();
    });
    
-   /* ============================
-      Activate
-      ============================ */
+   /* 2. Activate - Cleanup old caches */
    self.addEventListener("activate", (event) => {
      event.waitUntil(
        caches.keys().then((keys) =>
          Promise.all(
            keys.map((key) => {
              if (key !== CACHE_NAME) {
+               console.log("[SW] Deleting old cache:", key);
                return caches.delete(key);
              }
            })
          )
        )
      );
-   
      self.clients.claim();
    });
    
-   /* ============================
-      Fetch
-      ============================ */
+   /* 3. Fetch - The "Deep Link" Fix */
    self.addEventListener("fetch", (event) => {
-     const request = event.request;
+     const { request } = event;
+     const url = new URL(request.url);
    
+     // Only handle GET requests
      if (request.method !== "GET") return;
    
-     // Navigation
+     // STRATEGY: Navigation Requests (Page Loads/Refreshes)
      if (request.mode === "navigate") {
-        event.respondWith(
-          (async () => {
-            const cache = await caches.open(CACHE_NAME);
-      
-            // ALWAYS serve cached shell for navigation
-            const cached = await cache.match("/");
-            if (cached) return cached;
-      
-            // Absolute fallback
-            return cache.match("/offline.html");
-          })()
-        );
-        return;
-      }
-      
-   
-     // Assets
-     event.respondWith(
-       (async () => {
-         const cached = await caches.match(request);
-         if (cached) return cached;
-   
-         try {
-           const response = await fetch(request);
+       event.respondWith(
+         fetch(request).catch(async () => {
            const cache = await caches.open(CACHE_NAME);
-           cache.put(request, response.clone());
-           return response;
-         } catch {
-           return cached;
-         }
-       })()
+           
+           // 1. Try to find an exact match (e.g., /journal.html)
+           const exactMatch = await cache.match(request);
+           if (exactMatch) return exactMatch;
+   
+           // 2. Fallback to the root index.html (The SPA Shell)
+           // This allows client-side routing to take over once loaded
+           const shell = await cache.match("/");
+           if (shell) return shell;
+   
+           // 3. Last resort: Offline page
+           return cache.match("/offline.html");
+         })
+       );
+       return;
+     }
+   
+     // STRATEGY: Static Assets (JS, CSS, Images)
+     // Cache-First, then Network
+     event.respondWith(
+       caches.match(request).then((cachedResponse) => {
+         if (cachedResponse) return cachedResponse;
+   
+         return fetch(request).then((networkResponse) => {
+           // Don't cache non-ok responses or external API calls here 
+           // unless you specifically want to.
+           if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
+             return networkResponse;
+           }
+   
+           const responseToCache = networkResponse.clone();
+           caches.open(CACHE_NAME).then((cache) => {
+             cache.put(request, responseToCache);
+           });
+   
+           return networkResponse;
+         });
+       })
      );
    });
-   
