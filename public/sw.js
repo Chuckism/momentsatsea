@@ -1,1 +1,81 @@
-if(!self.define){let e,a={};const s=(s,c)=>(s=new URL(s+".js",c).href,a[s]||new Promise(a=>{if("document"in self){const e=document.createElement("script");e.src=s,e.onload=a,document.head.appendChild(e)}else e=s,importScripts(s),a()}).then(()=>{let e=a[s];if(!e)throw new Error(`Module ${s} didn’t register its module`);return e}));self.define=(c,i)=>{const t=e||("document"in self?document.currentScript.src:"")||location.href;if(a[t])return;let n={};const r=e=>s(e,t),f={module:{uri:t},exports:n,require:r};a[t]=Promise.all(c.map(e=>f[e]||r(e))).then(e=>(i(...e),n))}}define(["./workbox-cb477421"],function(e){"use strict";importScripts(),self.skipWaiting(),e.clientsClaim(),e.precacheAndRoute([{url:"/_next/app-build-manifest.json",revision:"a006231c506c90828da8e96871e2ba35"},{url:"/_next/static/ZZox96rILjo80FtTraRyh/_buildManifest.js",revision:"ceebc635d39116c2d96e36f49acdbeda"},{url:"/_next/static/ZZox96rILjo80FtTraRyh/_ssgManifest.js",revision:"b6652df95db52feb4daf4eca35380933"},{url:"/_next/static/chunks/134-66be53a762667230.js",revision:"66be53a762667230"},{url:"/_next/static/chunks/139.7a5a8e93a21948c1.js",revision:"7a5a8e93a21948c1"},{url:"/_next/static/chunks/255-379c01dac331dc2b.js",revision:"379c01dac331dc2b"},{url:"/_next/static/chunks/4bd1b696-c023c6e3521b1417.js",revision:"c023c6e3521b1417"},{url:"/_next/static/chunks/646.f342b7cffc01feb0.js",revision:"f342b7cffc01feb0"},{url:"/_next/static/chunks/app/_not-found/page-d8fe42642d9f0eb7.js",revision:"d8fe42642d9f0eb7"},{url:"/_next/static/chunks/app/api/health/route-db8e3e8f3a34141a.js",revision:"db8e3e8f3a34141a"},{url:"/_next/static/chunks/app/layout-01761719010aaa90.js",revision:"01761719010aaa90"},{url:"/_next/static/chunks/app/page-37586317104b685a.js",revision:"37586317104b685a"},{url:"/_next/static/chunks/framework-acd67e14855de5a2.js",revision:"acd67e14855de5a2"},{url:"/_next/static/chunks/main-085c0ba13a562caf.js",revision:"085c0ba13a562caf"},{url:"/_next/static/chunks/main-app-39eca86d6d6f336a.js",revision:"39eca86d6d6f336a"},{url:"/_next/static/chunks/pages/_app-82835f42865034fa.js",revision:"82835f42865034fa"},{url:"/_next/static/chunks/pages/_error-013f4188946cdd04.js",revision:"013f4188946cdd04"},{url:"/_next/static/chunks/polyfills-42372ed130431b0a.js",revision:"846118c33b2c0e922d7b3a7676f81f6f"},{url:"/_next/static/chunks/webpack-651ca3a692242399.js",revision:"651ca3a692242399"},{url:"/_next/static/css/843726755973e09f.css",revision:"843726755973e09f"},{url:"/_next/static/media/4cf2300e9c8272f7-s.p.woff2",revision:"18bae71b1e1b2bb25321090a3b563103"},{url:"/_next/static/media/747892c23ea88013-s.woff2",revision:"a0761690ccf4441ace5cec893b82d4ab"},{url:"/_next/static/media/8d697b304b401681-s.woff2",revision:"cc728f6c0adb04da0dfcb0fc436a8ae5"},{url:"/_next/static/media/93f479601ee12b01-s.p.woff2",revision:"da83d5f06d825c5ae65b7cca706cb312"},{url:"/_next/static/media/9610d9e46709d722-s.woff2",revision:"7b7c0ef93df188a852344fc272fc096b"},{url:"/_next/static/media/ba015fad6dcf6784-s.woff2",revision:"8ea4f719af3312a055caf09f34c89a77"},{url:"/file.svg",revision:"d09f95206c3fa0bb9bd9fefabfd0ea71"},{url:"/globe.svg",revision:"2aaafa6a49b6563925fe440891e32717"},{url:"/icon-192.png",revision:"8e883a5bcfc379d1a30ee44d0388cb33"},{url:"/icon-512.png",revision:"11c95d4458f3e4481feb91d921860d8e"},{url:"/next.svg",revision:"8e061864f388b47f33a1c3780831193e"},{url:"/offline.html",revision:"c7f61ba790f3372867f49b3b2b0fcfcf"},{url:"/vercel.svg",revision:"c0af2f507b369b085b35ef4bbe3bcf1e"},{url:"/window.svg",revision:"a2760511c65806022ad20adf74370ff3"}],{ignoreURLParametersMatching:[]}),e.cleanupOutdatedCaches(),e.registerRoute("/",new e.NetworkFirst({cacheName:"start-url",plugins:[{cacheWillUpdate:async({request:e,response:a,event:s,state:c})=>a&&"opaqueredirect"===a.type?new Response(a.body,{status:200,statusText:"OK",headers:a.headers}):a}]}),"GET"),e.registerRoute(/^https?.*/,new e.NetworkFirst({cacheName:"moments-offline-cache",networkTimeoutSeconds:3,plugins:[new e.ExpirationPlugin({maxEntries:200,maxAgeSeconds:31536e3})]}),"GET")});
+/* ============================
+   MomentsAtSea – Deterministic Service Worker
+   ============================ */
+
+   const CACHE_VERSION = "mas-shell-v1";
+   const SHELL_CACHE = CACHE_VERSION;
+   
+   /**
+    * Only include files that actually exist.
+    * Missing files will cause install to fail.
+    */
+   const APP_SHELL = [
+     "/",                // app shell
+     "/offline.html",    // fallback page
+     "/icon-192.png",
+     "/icon-512.png",
+   ];
+   
+   /* ============================
+      Install
+      ============================ */
+   self.addEventListener("install", (event) => {
+     event.waitUntil(
+       caches.open(SHELL_CACHE).then((cache) => cache.addAll(APP_SHELL))
+     );
+     self.skipWaiting();
+   });
+   
+   /* ============================
+      Activate
+      ============================ */
+   self.addEventListener("activate", (event) => {
+     event.waitUntil(
+       caches.keys().then((keys) =>
+         Promise.all(
+           keys.map((key) => {
+             if (key !== SHELL_CACHE) {
+               return caches.delete(key);
+             }
+           })
+         )
+       )
+     );
+     self.clients.claim();
+   });
+   
+   /* ============================
+      Fetch
+      ============================ */
+   self.addEventListener("fetch", (event) => {
+     const request = event.request;
+   
+     if (request.method !== "GET") return;
+   
+     // Navigation requests (cold start, refresh)
+     if (request.mode === "navigate") {
+       event.respondWith(
+         (async () => {
+           try {
+             // Online: use network
+             return await fetch(request);
+           } catch {
+             // Offline: always serve cached app shell
+             const cache = await caches.open(SHELL_CACHE);
+             const cachedRoot = await cache.match("/");
+             if (cachedRoot) return cachedRoot;
+   
+             // Final fallback
+             return cache.match("/offline.html");
+           }
+         })()
+       );
+       return;
+     }
+   
+     // Cache-first for static assets
+     event.respondWith(
+       caches.match(request).then((cached) => cached || fetch(request))
+     );
+   });
+   
