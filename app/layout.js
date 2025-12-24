@@ -1,4 +1,4 @@
-import SWClient from '@/components/SWClient';
+import SWClient from './components/SWClient';
 
 export const metadata = {
   title: "Moments At Sea",
