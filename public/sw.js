@@ -1,12 +1,12 @@
 /* ============================
-   MomentsAtSea - PWA Service Worker (v8)
-   Focused on Cold-Start Offline Reliability
+   MomentsAtSea - PWA Service Worker (v9)
+   The "Lean & Mean" Static Export Version
    ============================ */
 
-   const CACHE_VERSION = "mas-shell-v8"; 
+   const CACHE_VERSION = "mas-shell-v9"; 
    const CACHE_NAME = CACHE_VERSION;
    
-   // 1. Every file needed to make the "Shell" work without internet
+   // Explicitly list the core "App Shell"
    const PRECACHE_ASSETS = [
      "/",
      "/index.html",
@@ -18,26 +18,24 @@
      "/favicon.ico"
    ];
    
-   /* --- Install: Grab the basics --- */
+   /* 1. Install - Download the shell */
    self.addEventListener("install", (event) => {
      event.waitUntil(
        caches.open(CACHE_NAME).then((cache) => {
-         console.log("[SW] Pre-caching all shell assets");
+         console.log("[SW] Precaching shell assets");
          return cache.addAll(PRECACHE_ASSETS);
        })
      );
      self.skipWaiting();
    });
    
-   /* --- Activate: Clear old versions --- */
+   /* 2. Activate - Nuke old versions */
    self.addEventListener("activate", (event) => {
      event.waitUntil(
        caches.keys().then((keys) =>
          Promise.all(
            keys.map((key) => {
-             if (key !== CACHE_NAME) {
-               return caches.delete(key);
-             }
+             if (key !== CACHE_NAME) return caches.delete(key);
            })
          )
        )
@@ -45,44 +43,37 @@
      self.clients.claim();
    });
    
-   /* --- Fetch: The "Cold Launch" Magic --- */
+   /* 3. Fetch - The "No Dinosaur" Logic */
    self.addEventListener("fetch", (event) => {
      const { request } = event;
-   
      if (request.method !== "GET") return;
    
-     // Handling Navigation (Opening the app/Refreshing)
+     // NAVIGATION (Refreshes / Cold Starts)
      if (request.mode === "navigate") {
        event.respondWith(
          fetch(request).catch(async () => {
            const cache = await caches.open(CACHE_NAME);
-           
-           // Match logic: Exact URL -> Root (/) -> index.html -> offline.html
-           const match = await cache.match(request) || 
-                         await cache.match("/") || 
-                         await cache.match("/index.html");
-           
-           return match || cache.match("/offline.html");
+           // Try to find a match, otherwise force the homepage
+           return (await cache.match(request)) || 
+                  (await cache.match("/index.html")) || 
+                  (await cache.match("/"));
          })
        );
        return;
      }
    
-     // Handling Assets (CSS, JS, Images)
+     // ASSETS (Styles, Images, Scripts)
      event.respondWith(
-       caches.match(request).then((cachedResponse) => {
-         if (cachedResponse) return cachedResponse;
-   
-         return fetch(request).then((networkResponse) => {
-           if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
-             const responseToCache = networkResponse.clone();
-             caches.open(CACHE_NAME).then((cache) => {
-               cache.put(request, responseToCache);
-             });
+       caches.match(request).then((cached) => {
+         return cached || fetch(request).then((networkResponse) => {
+           // Cache new assets as we find them
+           if (networkResponse.status === 200) {
+             const cacheCopy = networkResponse.clone();
+             caches.open(CACHE_NAME).then((cache) => cache.put(request, cacheCopy));
            }
            return networkResponse;
          }).catch(() => {
-           // Fail silently if network fails and not in cache
+           // If everything fails, return nothing (or a cached icon if available)
          });
        })
      );
