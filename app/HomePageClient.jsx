@@ -10,9 +10,9 @@ import {
   Cloud,
 } from 'lucide-react';
 
-import AuthGate from '@/app/features/auth/AuthGate';
-import CruiseSetup from '@/app/features/cruise-setup/CruiseSetup';
-import DailyJournal from '@/app/features/journal/DailyJournal';
+import AuthGate from './features/auth/AuthGate';
+import CruiseSetup from './features/cruise-setup/CruiseSetup';
+import DailyJournal from './features/journal/DailyJournal';
 
 import MagazineRenderer from './components/MagazineRenderer';
 import PostcardGenerator from './components/PostcardGenerator';
@@ -22,6 +22,7 @@ import SyncManager from './components/SyncManager';
 import OrderSheet from './components/OrderSheet';
 import BackupRestore from './components/BackupRestore';
 import AuthSheet from './components/AuthSheet';
+
 
 /* =========================
    Helpers
