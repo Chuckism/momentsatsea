@@ -1,40 +1,41 @@
 /* ============================
-   MomentsAtSea - Optimized PWA Service Worker
+   MomentsAtSea - PWA Service Worker (v8)
+   Focused on Cold-Start Offline Reliability
    ============================ */
 
-   const CACHE_VERSION = "mas-shell-v7"; // Incremented version
+   const CACHE_VERSION = "mas-shell-v8"; 
    const CACHE_NAME = CACHE_VERSION;
    
-   // Assets to cache immediately on install
+   // 1. Every file needed to make the "Shell" work without internet
    const PRECACHE_ASSETS = [
      "/",
      "/index.html",
      "/offline.html",
-     "/manifest.webmanifest", // Ensure this matches your actual filename
+     "/manifest.webmanifest",
+     "/globals.css",
      "/icon-192.png",
      "/icon-512.png",
      "/favicon.ico"
    ];
    
-   /* 1. Install - Pre-cache the App Shell */
+   /* --- Install: Grab the basics --- */
    self.addEventListener("install", (event) => {
      event.waitUntil(
        caches.open(CACHE_NAME).then((cache) => {
-         console.log("[SW] Pre-caching App Shell");
+         console.log("[SW] Pre-caching all shell assets");
          return cache.addAll(PRECACHE_ASSETS);
        })
      );
      self.skipWaiting();
    });
    
-   /* 2. Activate - Cleanup old caches */
+   /* --- Activate: Clear old versions --- */
    self.addEventListener("activate", (event) => {
      event.waitUntil(
        caches.keys().then((keys) =>
          Promise.all(
            keys.map((key) => {
              if (key !== CACHE_NAME) {
-               console.log("[SW] Deleting old cache:", key);
                return caches.delete(key);
              }
            })
@@ -44,55 +45,44 @@
      self.clients.claim();
    });
    
-   /* 3. Fetch - The "Deep Link" Fix */
+   /* --- Fetch: The "Cold Launch" Magic --- */
    self.addEventListener("fetch", (event) => {
      const { request } = event;
-     const url = new URL(request.url);
    
-     // Only handle GET requests
      if (request.method !== "GET") return;
    
-     // STRATEGY: Navigation Requests (Page Loads/Refreshes)
+     // Handling Navigation (Opening the app/Refreshing)
      if (request.mode === "navigate") {
        event.respondWith(
          fetch(request).catch(async () => {
            const cache = await caches.open(CACHE_NAME);
            
-           // 1. Try to find an exact match (e.g., /journal.html)
-           const exactMatch = await cache.match(request);
-           if (exactMatch) return exactMatch;
-   
-           // 2. Fallback to the root index.html (The SPA Shell)
-           // This allows client-side routing to take over once loaded
-           const shell = await cache.match("/");
-           if (shell) return shell;
-   
-           // 3. Last resort: Offline page
-           return cache.match("/offline.html");
+           // Match logic: Exact URL -> Root (/) -> index.html -> offline.html
+           const match = await cache.match(request) || 
+                         await cache.match("/") || 
+                         await cache.match("/index.html");
+           
+           return match || cache.match("/offline.html");
          })
        );
        return;
      }
    
-     // STRATEGY: Static Assets (JS, CSS, Images)
-     // Cache-First, then Network
+     // Handling Assets (CSS, JS, Images)
      event.respondWith(
        caches.match(request).then((cachedResponse) => {
          if (cachedResponse) return cachedResponse;
    
          return fetch(request).then((networkResponse) => {
-           // Don't cache non-ok responses or external API calls here 
-           // unless you specifically want to.
-           if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic') {
-             return networkResponse;
+           if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+             const responseToCache = networkResponse.clone();
+             caches.open(CACHE_NAME).then((cache) => {
+               cache.put(request, responseToCache);
+             });
            }
-   
-           const responseToCache = networkResponse.clone();
-           caches.open(CACHE_NAME).then((cache) => {
-             cache.put(request, responseToCache);
-           });
-   
            return networkResponse;
+         }).catch(() => {
+           // Fail silently if network fails and not in cache
          });
        })
      );
