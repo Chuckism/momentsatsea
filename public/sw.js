@@ -1,49 +1,49 @@
 /* ============================
-   MomentsAtSea – Deterministic Service Worker
+   MomentsAtSea - Deterministic Service Worker
    ============================ */
 
-   const CACHE_VERSION = "mas-shell-v3";
+   const CACHE_VERSION = "mas-shell-v4";
    const SHELL_CACHE = CACHE_VERSION;
    
-   /**
-    * Only include files that actually exist.
-    * Missing files will cause install to fail.
-    */
-   const APP_SHELL = [
-    "/",
-    "/offline.html",
-    "/icon-192.png",
-    "/icon-512.png",
-  
-    // Next.js runtime & app bundles
-    "/_next/static/chunks/main-app.js",
-    "/_next/static/chunks/webpack.js",
-    "/_next/static/chunks/framework.js",
-  ];
-  
    /* ============================
       Install
       ============================ */
-      self.addEventListener("install", (event) => {
-        event.waitUntil(
-          (async () => {
-            const cache = await caches.open(SHELL_CACHE);
-      
-            // Cache core shell
-            await cache.addAll(APP_SHELL);
-      
-            // Cache ALL Next.js static assets dynamically
-            const res = await fetch("/_next/static/");
-            if (res.ok) {
-              // Warm the cache by triggering asset discovery
-              // (Next will request actual JS chunks immediately after)
-            }
-          })()
-        );
-      
-        self.skipWaiting();
-      });
-      
+   self.addEventListener("install", (event) => {
+     event.waitUntil(
+       (async () => {
+         const cache = await caches.open(SHELL_CACHE);
+   
+         // 1. Cache minimal shell
+         await cache.addAll([
+           "/",
+           "/offline.html",
+           "/icon-192.png",
+           "/icon-512.png",
+         ]);
+   
+         // 2. Precache Next.js build assets for offline hydration
+         const res = await fetch("/_next/static/buildManifest.json");
+         if (!res.ok) return;
+   
+         const manifest = await res.json();
+         const assets = new Set();
+   
+         Object.values(manifest).forEach((entry) => {
+           if (Array.isArray(entry)) {
+             entry.forEach((file) => {
+               if (file.endsWith(".js") || file.endsWith(".css")) {
+                 assets.add("/_next/static/" + file);
+               }
+             });
+           }
+         });
+   
+         await cache.addAll([...assets]);
+       })()
+     );
+   
+     self.skipWaiting();
+   });
    
    /* ============================
       Activate
@@ -60,6 +60,7 @@
          )
        )
      );
+   
      self.clients.claim();
    });
    
@@ -71,20 +72,16 @@
    
      if (request.method !== "GET") return;
    
-     // Navigation requests (cold start, refresh)
+     // Navigation requests
      if (request.mode === "navigate") {
        event.respondWith(
          (async () => {
            try {
-             // Online: use network
              return await fetch(request);
            } catch {
-             // Offline: always serve cached app shell
              const cache = await caches.open(SHELL_CACHE);
              const cachedRoot = await cache.match("/");
              if (cachedRoot) return cachedRoot;
-   
-             // Final fallback
              return cache.match("/offline.html");
            }
          })()
@@ -92,29 +89,21 @@
        return;
      }
    
-     // Cache-first for static assets and Next.js runtime
-event.respondWith(
-    (async () => {
-      const cached = await caches.match(request);
-      if (cached) return cached;
-  
-      try {
-        const response = await fetch(request);
-  
-        // Explicitly cache Next.js static assets
-        if (
-          request.url.includes('/_next/static/') ||
-          request.url.endsWith('.js') ||
-          request.url.endsWith('.css')
-        ) {
-          const cache = await caches.open(SHELL_CACHE);
-          cache.put(request, response.clone());
-        }
-  
-        return response;
-      } catch {
-        return cached;
-      }
-    })()
-  );
-  
+     // Static assets: cache-first
+     event.respondWith(
+       (async () => {
+         const cached = await caches.match(request);
+         if (cached) return cached;
+   
+         try {
+           const response = await fetch(request);
+           const cache = await caches.open(SHELL_CACHE);
+           cache.put(request, response.clone());
+           return response;
+         } catch {
+           return cached;
+         }
+       })()
+     );
+   });
+   
