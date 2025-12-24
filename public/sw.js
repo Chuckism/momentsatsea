@@ -2,7 +2,7 @@
    MomentsAtSea - Deterministic Service Worker
    ============================ */
 
-   const CACHE_VERSION = "mas-shell-v5";
+   const CACHE_VERSION = "mas-shell-v6";
    const CACHE_NAME = CACHE_VERSION;
    
    /* ============================
@@ -82,19 +82,21 @@
    
      // Navigation
      if (request.mode === "navigate") {
-       event.respondWith(
-         (async () => {
-           const cache = await caches.open(CACHE_NAME);
-           try {
-             return await fetch(request);
-           } catch {
-             const cached = await cache.match("/");
-             return cached || cache.match("/offline.html");
-           }
-         })()
-       );
-       return;
-     }
+        event.respondWith(
+          (async () => {
+            const cache = await caches.open(CACHE_NAME);
+      
+            // ALWAYS serve cached shell for navigation
+            const cached = await cache.match("/");
+            if (cached) return cached;
+      
+            // Absolute fallback
+            return cache.match("/offline.html");
+          })()
+        );
+        return;
+      }
+      
    
      // Assets
      event.respondWith(
