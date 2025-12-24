@@ -2,8 +2,8 @@
    MomentsAtSea - Deterministic Service Worker
    ============================ */
 
-   const CACHE_VERSION = "mas-shell-v4";
-   const SHELL_CACHE = CACHE_VERSION;
+   const CACHE_VERSION = "mas-shell-v5";
+   const CACHE_NAME = CACHE_VERSION;
    
    /* ============================
       Install
@@ -11,9 +11,9 @@
    self.addEventListener("install", (event) => {
      event.waitUntil(
        (async () => {
-         const cache = await caches.open(SHELL_CACHE);
+         const cache = await caches.open(CACHE_NAME);
    
-         // 1. Cache minimal shell
+         // 1. Cache base shell
          await cache.addAll([
            "/",
            "/offline.html",
@@ -21,11 +21,19 @@
            "/icon-512.png",
          ]);
    
-         // 2. Precache Next.js build assets for offline hydration
-         const res = await fetch("/_next/static/buildManifest.json");
+         // 2. Load Next.js static build manifest (STATIC EXPORT SAFE)
+         const res = await fetch("/_next/static/_buildManifest.js");
          if (!res.ok) return;
    
-         const manifest = await res.json();
+         const text = await res.text();
+   
+         // The manifest defines self.__BUILD_MANIFEST
+         const sandbox = {};
+         new Function("self", text)(sandbox);
+   
+         const manifest = sandbox.__BUILD_MANIFEST;
+         if (!manifest) return;
+   
          const assets = new Set();
    
          Object.values(manifest).forEach((entry) => {
@@ -53,7 +61,7 @@
        caches.keys().then((keys) =>
          Promise.all(
            keys.map((key) => {
-             if (key !== SHELL_CACHE) {
+             if (key !== CACHE_NAME) {
                return caches.delete(key);
              }
            })
@@ -72,24 +80,23 @@
    
      if (request.method !== "GET") return;
    
-     // Navigation requests
+     // Navigation
      if (request.mode === "navigate") {
        event.respondWith(
          (async () => {
+           const cache = await caches.open(CACHE_NAME);
            try {
              return await fetch(request);
            } catch {
-             const cache = await caches.open(SHELL_CACHE);
-             const cachedRoot = await cache.match("/");
-             if (cachedRoot) return cachedRoot;
-             return cache.match("/offline.html");
+             const cached = await cache.match("/");
+             return cached || cache.match("/offline.html");
            }
          })()
        );
        return;
      }
    
-     // Static assets: cache-first
+     // Assets
      event.respondWith(
        (async () => {
          const cached = await caches.match(request);
@@ -97,7 +104,7 @@
    
          try {
            const response = await fetch(request);
-           const cache = await caches.open(SHELL_CACHE);
+           const cache = await caches.open(CACHE_NAME);
            cache.put(request, response.clone());
            return response;
          } catch {
