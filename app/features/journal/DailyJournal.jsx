@@ -12,7 +12,7 @@ import {
 
 import DayBanner from "@/app/components/DayBanner";
 import DailyGuidance from "@/app/components/DailyGuidance";
-import DailyHints from "@/app/components/DailyHints";
+
 
 import {
   putPhoto,
@@ -316,7 +316,7 @@ export default function DailyJournal({
 
       <DayBanner day={currentDay} />
       <DailyGuidance day={currentDay} />
-      <DailyHints day={currentDay} />
+  
 
       <input
         className="w-full bg-slate-700 rounded-lg p-3 text-white"
