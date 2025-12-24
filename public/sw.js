@@ -1,15 +1,14 @@
-const CACHE_VERSION = "mas-shell-v12"; 
-const CACHE_NAME = CACHE_VERSION;
+const CACHE_NAME = "mas-cache-v15";
 
 const PRECACHE_ASSETS = [
-  "/",               // <--- The "Front Door"
-  "/index.html",     
-  "/offline.html",
+  "/",
+  "/index.html",
   "/manifest.webmanifest",
   "/globals.css",
+  "/offline.html",
+  "/favicon.ico",
   "/icon-192.png",
-  "/icon-512.png",
-  "/favicon.ico"
+  "/icon-512.png"
 ];
 
 self.addEventListener("install", (event) => {
@@ -29,30 +28,28 @@ self.addEventListener("activate", (event) => {
 });
 
 self.addEventListener("fetch", (event) => {
-  const { request } = event;
-  if (request.method !== "GET") return;
+  if (event.request.method !== "GET") return;
 
-  if (request.mode === "navigate") {
+  if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(request).catch(async () => {
-        const cache = await caches.open(CACHE_NAME);
-        // FORCE the root or index.html no matter what
-        return (await cache.match("/")) || 
-               (await cache.match("/index.html")) || 
-               (await cache.match("/offline.html"));
+      caches.match("/").then((cachedResponse) => {
+        return cachedResponse || fetch(event.request).catch(() => caches.match("/offline.html"));
       })
     );
     return;
   }
 
   event.respondWith(
-    caches.match(request).then((cached) => {
-      return cached || fetch(request).then((response) => {
-        if (response.status === 200) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+    caches.match(event.request).then((cached) => {
+      return cached || fetch(event.request).then((response) => {
+        if (!response || response.status !== 200 || response.type !== 'basic') {
+          return response;
         }
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
         return response;
+      }).catch(() => {
+        return new Response("Offline resource not available", { status: 503 });
       });
     })
   );
