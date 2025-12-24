@@ -73,9 +73,29 @@
        return;
      }
    
-     // Cache-first for static assets
-     event.respondWith(
-       caches.match(request).then((cached) => cached || fetch(request))
-     );
-   });
-   
+     // Cache-first for static assets and Next.js runtime
+event.respondWith(
+    (async () => {
+      const cached = await caches.match(request);
+      if (cached) return cached;
+  
+      try {
+        const response = await fetch(request);
+  
+        // Explicitly cache Next.js static assets
+        if (
+          request.url.includes('/_next/static/') ||
+          request.url.endsWith('.js') ||
+          request.url.endsWith('.css')
+        ) {
+          const cache = await caches.open(SHELL_CACHE);
+          cache.put(request, response.clone());
+        }
+  
+        return response;
+      } catch {
+        return cached;
+      }
+    })()
+  );
+  
