@@ -1,4 +1,4 @@
-const CACHE_NAME = 'moments-v1';
+const CACHE_NAME = 'moments-v2';
 const OFFLINE_URL = '/offline.html';
 
 // Install: Pre-cache critical files
@@ -16,6 +16,16 @@ self.addEventListener('install', (event) => {
           '/manifest.webmanifest',
           '/icon-192.png',
           '/icon-512.png',
+          // Critical CSS
+  '/_next/static/css/43845680da45024f.css',
+  // Critical JS chunks
+  '/_next/static/chunks/polyfills-42372ed130431b0a.js',
+  '/_next/static/chunks/webpack-651ca3a692242399.js',
+  '/_next/static/chunks/framework-acd67e14855de5a2.js',
+  '/_next/static/chunks/main-cacc7a2a1067388a.js',
+  '/_next/static/chunks/main-app-9bebaa7e88a17288.js',
+  '/_next/static/chunks/255-379c01dac331dc2b.js',
+  '/_next/static/chunks/4bd1b696-c023c6e3521b1417.js',
         ]);
       })
       .then(() => {
