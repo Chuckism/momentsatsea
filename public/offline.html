@@ -22,32 +22,34 @@
     .card {
       width: 100%;
       max-width: 28rem;
-      padding: 1.25rem 1.5rem;
+      padding: 1.5rem;
       border-radius: 0.75rem;
       background: rgba(30,41,59,.6);
       border: 1px solid rgba(51,65,85,.6);
       box-shadow: 0 10px 30px rgba(0,0,0,.3);
+      text-align: center;
     }
-    h1 { margin: 0 0 .5rem; font-size: 1.25rem; }
-    p { margin: .25rem 0; color: #9fb3c8; }
-    .hint { margin-top: .75rem; font-size: .9rem; color: #93c5fd; }
+    h1 { margin: 0 0 .5rem; font-size: 1.5rem; }
+    p { margin: .5rem 0; color: #9fb3c8; }
     .actions {
-      margin-top: 1rem;
+      margin-top: 1.5rem;
       display: flex;
-      gap: .5rem;
-      flex-wrap: wrap;
+      flex-direction: column;
+      gap: .75rem;
     }
-    button, a.btn {
+    .btn {
       appearance: none;
       border: 0;
       border-radius: .6rem;
-      padding: .65rem 1rem;
+      padding: .8rem 1rem;
       font-weight: 600;
       cursor: pointer;
       text-decoration: none;
-      transition: transform .08s ease, opacity .15s ease;
+      transition: transform .08s ease;
+      display: block;
+      text-align: center;
     }
-    button:active, a.btn:active { transform: translateY(1px); }
+    .btn:active { transform: translateY(1px); }
     .primary {
       background: linear-gradient(90deg,#2563eb,#06b6d4);
       color: white;
@@ -57,75 +59,18 @@
       color: #dbeafe;
       border: 1px solid rgba(71,85,105,.7);
     }
-    .status {
-      margin-top: .75rem;
-      font-size: .85rem;
-      color: #94a3b8;
-    }
-    .dot {
-      display: inline-block;
-      width: .5rem; height: .5rem;
-      border-radius: 999px;
-      background: #ef4444;
-      vertical-align: middle;
-      margin-right: .4rem;
-    }
-    .dot.online { background: #22c55e; }
   </style>
 </head>
 <body>
-  <div class="card" role="status" aria-live="polite">
-    <h1>You're offline</h1>
-    <p>The app works offline, but pages you haven’t opened before may not be cached yet.</p>
-    <p class="hint">Tip: open your cruise and a few journal days while online to cache them.</p>
+  <div class="card">
+    <div style="font-size: 3rem; margin-bottom: 1rem;">⚓</div>
+    <h1>MomentsAtSea</h1>
+    <p>Your journal is saved locally and ready for use.</p>
 
     <div class="actions">
-      <button class="primary" id="retry">Try again</button>
-      <a href="/" class="btn secondary" id="openApp" rel="nofollow">Open app</a>
-    </div>
-
-    <div class="status">
-      <span class="dot" id="netDot" aria-hidden="true"></span>
-      <span id="netText">No connection</span>
+      <a href="/" class="btn primary">Enter Journal</a>
+      <button class="btn secondary" onclick="window.location.reload()">Refresh Connection</button>
     </div>
   </div>
-
-  <script>
-    (function () {
-      const startUrl = '/';
-      const retryBtn = document.getElementById('retry');
-      const netDot = document.getElementById('netDot');
-      const netText = document.getElementById('netText');
-
-      function updateStatus() {
-        const online = navigator.onLine;
-        netDot.classList.toggle('online', online);
-        netText.textContent = online ? 'Back online — opening app…' : 'No connection';
-      }
-
-      function openIfOnline() {
-        if (navigator.onLine) {
-          // Prefer navigating to the PWA shell
-          window.location.href = startUrl;
-        }
-      }
-
-      retryBtn.addEventListener('click', function () {
-        // A normal reload will try network; if still offline the SW will serve this page again
-        window.location.reload();
-      });
-
-      window.addEventListener('online', () => { updateStatus(); openIfOnline(); });
-      window.addEventListener('offline', updateStatus);
-
-      // Initial paint
-      updateStatus();
-      if (navigator.onLine) {
-        // Small delay to let the SW settle before redirect
-        setTimeout(openIfOnline, 150);
-      }
-    })();
-  </script>
 </body>
 </html>
-
