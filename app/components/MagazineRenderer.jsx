@@ -1,9 +1,11 @@
 'use client';
-import { useMemo, useEffect, useState } from 'react';
-import { Ship, MapPin, Sun, X, Printer, Loader2, ChevronLeft, ChevronRight, Award } from 'lucide-react';
+import { useMemo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Ship, Sun, X, Printer, Loader2, ChevronLeft, ChevronRight, Award, FileDown, Share2 } from 'lucide-react';
 import { getDisplayBlob } from '@/lib/photoStore';
 import { collectCruisePhotos, favoritesFirst } from '@/lib/photoSelection';
 import { SITE_LABEL, APP_NAME } from '@/lib/brand';
+import { buildMagazinePdf, PAGE_W_PX, PAGE_H_PX } from '@/lib/magazinePdf';
+import { saveOrShareFile, shareNeedsFreshTap, slugify } from '@/lib/shareFile';
 
 
 /* ==========================================
@@ -37,7 +39,7 @@ function MagazinePhoto({ id, className, caption, objectFit = "cover" }) {
       {url ? (
         <img src={url} className={`w-full h-full object-${objectFit}`} alt={caption || "Cruise memory"} />
       ) : (
-        <div className="flex items-center justify-center w-full h-full text-slate-300">
+        <div data-photo-loading className="flex items-center justify-center w-full h-full text-slate-300">
            <Loader2 className="w-6 h-6 animate-spin" />
         </div>
       )}
@@ -46,6 +48,27 @@ function MagazinePhoto({ id, className, caption, objectFit = "cover" }) {
           <p className="text-[10px] text-white text-center font-medium truncate">{caption}</p>
         </div>
       )}
+    </div>
+  );
+}
+
+/* ==========================================
+   PAGE FRAME (fits a full-size page on small screens)
+   ========================================== */
+// The page inside keeps its real 8.5in x 11in size, so the PDF and print
+// output don't change; only the on-screen preview is scaled.
+function PageFrame({ scale, children }) {
+  return (
+    <div
+      className="shrink-0 print:w-auto! print:h-auto!"
+      style={{ width: PAGE_W_PX * scale, height: PAGE_H_PX * scale }}
+    >
+      <div
+        className="print:[transform:none]!"
+        style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
+      >
+        {children}
+      </div>
     </div>
   );
 }
@@ -117,6 +140,70 @@ export default function MagazineRenderer({ cruise, onClose }) {
     return uniquePorts.join(" • ");
   }, [cruise.itinerary]);
 
+  // 3. Fit pages to the screen
+  const scrollBoxRef = useRef(null);
+  const [scale, setScale] = useState(1);
+  useLayoutEffect(() => {
+    const box = scrollBoxRef.current;
+    if (!box || typeof ResizeObserver === 'undefined') return;
+    const fit = () => {
+      const available = box.clientWidth - 32;
+      setScale(Math.min(1, Math.max(0.2, available / PAGE_W_PX)));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, []);
+
+  // 4. Save as PDF
+  const pageRefs = useRef([]);
+  const registerPage = (index) => (el) => {
+    pageRefs.current[index] = el;
+  };
+  const [pdfStatus, setPdfStatus] = useState(''); // '', 'Page 2 of 9…', 'Saved!', error text
+  const [pdfBlob, setPdfBlob] = useState(null);
+  const busy = pdfStatus.startsWith('Page') || pdfStatus === 'Finishing…';
+  const pdfName = `${slugify(cruise.ship || cruise.label, 'cruise')}-magazine.pdf`;
+
+  // A new cover photo means a new PDF.
+  useEffect(() => {
+    setPdfBlob(null);
+  }, [coverPhotoIndex]);
+
+  const sharePdf = async (blob) => {
+    try {
+      const outcome = await saveOrShareFile(blob, pdfName, { title: `${shipTitle} magazine` });
+      setPdfStatus(outcome === 'cancelled' ? '' : 'Saved!');
+    } catch (e) {
+      console.error('Magazine share failed', e);
+      setPdfStatus('Could not save');
+    }
+    setTimeout(() => setPdfStatus(''), 2500);
+  };
+
+  const handleSavePdf = async () => {
+    if (busy) return;
+    try {
+      const pages = pageRefs.current.slice(0, sortedDays.length + 2).filter(Boolean);
+      const blob = await buildMagazinePdf(pages, {
+        title: `${shipTitle} magazine`,
+        onProgress: (done, total) =>
+          setPdfStatus(done < total ? `Page ${done + 1} of ${total}…` : 'Finishing…'),
+      });
+      if (shareNeedsFreshTap()) {
+        setPdfBlob(blob);
+        setPdfStatus('');
+      } else {
+        await sharePdf(blob);
+      }
+    } catch (e) {
+      console.error('Magazine PDF failed', e);
+      setPdfStatus('Could not make PDF');
+      setTimeout(() => setPdfStatus(''), 3000);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-[100] bg-slate-900 flex flex-col">
       
@@ -139,31 +226,52 @@ export default function MagazineRenderer({ cruise, onClose }) {
       `}</style>
 
       {/* Toolbar */}
-      <div className="bg-slate-800 border-b border-slate-700 p-4 flex justify-between items-center shadow-lg shrink-0 print:hidden">
-        <h2 className="text-white font-bold text-lg flex items-center gap-2">
-           <Printer className="w-5 h-5 text-blue-400" /> Digital Keepsake Preview
+      <div className="bg-slate-800 border-b border-slate-700 p-3 sm:p-4 flex justify-between items-center gap-2 shadow-lg shrink-0 print:hidden">
+        <h2 className="text-white font-bold text-base sm:text-lg flex items-center gap-2 min-w-0">
+           <FileDown className="w-5 h-5 text-blue-400 shrink-0" />
+           <span className="truncate">Cruise Magazine</span>
         </h2>
-        <div className="flex gap-3">
-          <button 
-            onClick={() => window.print()} 
-            className="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg font-bold shadow-lg transition-all"
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Desktop browsers can still print directly. */}
+          <button
+            onClick={() => window.print()}
+            disabled={busy}
+            className="hidden md:inline-flex items-center gap-2 text-slate-300 hover:text-white px-3 py-2 rounded-lg"
           >
-            Print / Save PDF
+            <Printer className="w-4 h-4" /> Print
           </button>
-          <button onClick={onClose} className="p-2 text-slate-400 hover:text-white transition-colors">
+          {pdfBlob ? (
+            <button
+              onClick={() => sharePdf(pdfBlob)}
+              className="inline-flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg font-bold shadow-lg"
+            >
+              <Share2 className="w-4 h-4" /> {pdfStatus || 'Save / Share PDF'}
+            </button>
+          ) : (
+            <button
+              onClick={handleSavePdf}
+              disabled={busy}
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-80 text-white px-4 py-2 rounded-lg font-bold shadow-lg"
+            >
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+              {pdfStatus || 'Save PDF'}
+            </button>
+          )}
+          <button onClick={onClose} aria-label="Close" className="p-2 text-slate-400 hover:text-white transition-colors">
             <X className="w-6 h-6" />
           </button>
         </div>
       </div>
 
       {/* Scrollable Canvas */}
-      <div className="flex-1 overflow-y-auto p-8 bg-slate-500/50 flex flex-col items-center gap-8 print:p-0 print:bg-white print:gap-0">
+      <div ref={scrollBoxRef} className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-8 bg-slate-500/50 flex flex-col items-center gap-8 print:p-0 print:bg-white print:gap-0">
         
         {/* WRAPPER FOR PRINTING */}
-        <div id="magazine-content" className="flex flex-col items-center gap-8 print:gap-0 print:block">
+        <div id="magazine-content" className="flex flex-col items-center gap-4 md:gap-8 print:gap-0 print:block">
 
           {/* === COVER PAGE === */}
-          <div data-testid="magazine-cover" className="w-[8.5in] h-[11in] bg-white relative shadow-2xl shrink-0 overflow-hidden print:shadow-none print:break-after-page group">
+          <PageFrame scale={scale}>
+          <div ref={registerPage(0)} data-testid="magazine-cover" className="w-[8.5in] h-[11in] bg-white relative shadow-2xl shrink-0 overflow-hidden print:shadow-none print:break-after-page group">
              
              {/* Full Bleed Background Photo */}
              <div className="absolute inset-0 bg-slate-900">
@@ -187,7 +295,7 @@ export default function MagazineRenderer({ cruise, onClose }) {
              {/* === MASTHEAD (Top Title) === */}
              <div className="absolute top-12 left-0 right-0 text-center px-8 z-10">
                 {/* Ship Name - Big, Bold, Serif */}
-                <h1 className="text-6xl md:text-8xl font-serif font-bold text-white drop-shadow-2xl uppercase tracking-tight leading-none mb-2">
+                <h1 className={`${shipTitle.length > 14 ? 'text-6xl' : 'text-8xl'} font-seriffont-bold text-white drop-shadow-2xl uppercase tracking-tight leading-none mb-2`}>
                   {shipTitle}
                 </h1>
                 
@@ -219,10 +327,12 @@ export default function MagazineRenderer({ cruise, onClose }) {
                 </div>
              </div>
           </div>
+          </PageFrame>
 
           {/* === DAILY PAGES === */}
           {sortedDays.map((day, i) => (
-            <div key={i} className="w-[8.5in] h-[11in] bg-white relative shadow-2xl shrink-0 print:shadow-none print:break-after-page flex flex-col overflow-hidden">
+            <PageFrame key={i} scale={scale}>
+            <div ref={registerPage(i + 1)} className="w-[8.5in] h-[11in] bg-white relative shadow-2xl shrink-0 print:shadow-none print:break-after-page flex flex-col overflow-hidden">
               
               {/* Header */}
               <div className="h-24 bg-slate-100 flex items-center justify-between px-10 border-b border-slate-200 shrink-0">
@@ -254,8 +364,12 @@ export default function MagazineRenderer({ cruise, onClose }) {
                  {/* Left Col: Journal Text */}
                  <div className="col-span-5 flex flex-col gap-8">
                     {day.summary ? (
-                      <div className="prose prose-slate prose-lg font-serif leading-relaxed text-slate-600 first-letter:text-5xl first-letter:font-bold first-letter:text-slate-900 first-letter:mr-1 first-letter:float-left">
-                         {day.summary}
+                      <div className="prose prose-slate prose-lg font-serif leading-relaxed text-slate-600">
+                         {/* A real element, not ::first-letter, so the PDF capture keeps it. */}
+                         <span data-testid="drop-cap" className="float-left text-5xl font-bold text-slate-900 mr-1 leading-none">
+                           {day.summary.trim().charAt(0)}
+                         </span>
+                         {day.summary.trim().slice(1)}
                       </div>
                     ) : (
                       <div className="p-8 border-2 border-dashed border-slate-200 rounded-xl text-center text-slate-400 italic">
@@ -328,10 +442,12 @@ export default function MagazineRenderer({ cruise, onClose }) {
               </div>
 
             </div>
+            </PageFrame>
           ))}
           
           {/* === BACK COVER === */}
-          <div className="w-[8.5in] h-[11in] bg-slate-900 relative shadow-2xl shrink-0 flex items-center justify-center print:shadow-none print:break-after-page">
+          <PageFrame scale={scale}>
+          <div ref={registerPage(sortedDays.length + 1)} className="w-[8.5in] h-[11in] bg-slate-900 relative shadow-2xl shrink-0 flex items-center justify-center print:shadow-none print:break-after-page">
             <div className="text-center space-y-4">
                <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto">
                  <Ship className="w-8 h-8 text-white" />
@@ -341,6 +457,7 @@ export default function MagazineRenderer({ cruise, onClose }) {
                <div className="text-slate-500 text-xs mt-8">{SITE_LABEL}</div>
             </div>
           </div>
+          </PageFrame>
 
         </div>
       </div>
