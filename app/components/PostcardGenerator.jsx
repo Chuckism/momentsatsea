@@ -1,9 +1,16 @@
 'use client';
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Download, RefreshCw, Ship, Loader2, Square, Grid, AlignCenter, ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight } from 'lucide-react';
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo } from 'react';
+import { Download, Share2, RefreshCw, Ship, Loader2, Square, Grid, AlignCenter, ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import * as htmlToImage from 'html-to-image';
-import { getPhotoBlob } from '@/lib/photoStore';
+import { getDisplayBlob } from '@/lib/photoStore';
+import { loadCruisePhotos, pickPhotos } from '@/lib/photoSelection';
+import { saveOrShareFile, shareNeedsFreshTap, slugify } from '@/lib/shareFile';
+import { SITE_URL, SITE_LABEL } from '@/lib/brand';
+
+// The postcard is designed at this size and exported at 2x.
+const CARD_W = 800;
+const CARD_H = 520;
 
 
 /* ==========================================
@@ -20,7 +27,7 @@ function PostcardPhoto({ id, className }) {
       try {
         if (!id) return;
         setLoading(true);
-        const blob = await getPhotoBlob(id);
+        const blob = await getDisplayBlob(id);
         if (active && blob) {
           objectUrl = URL.createObjectURL(blob);
           setUrl(objectUrl);
@@ -45,7 +52,7 @@ function PostcardPhoto({ id, className }) {
 
   if (!url) return <div className={`bg-slate-100 ${className}`} />;
 
-  return <img src={url} className={`w-full h-full object-cover ${className}`} alt="Cruise memory" />;
+  return <img src={url} data-photo-id={id} className={`w-full h-full object-cover ${className}`} alt="Cruise memory" />;
 }
 
 /* ==========================================
@@ -86,36 +93,17 @@ export default function PostcardGenerator({ cruise, onClose }) {
       }));
   }, [cruise]);
 
-  // 2. LOAD PHOTOS
+  // 2. LOAD PHOTOS (favorites first, then spread across the trip)
   useEffect(() => {
     if (!cruise?.id) return;
+    const photos = loadCruisePhotos(cruise);
+    setPhotoDatabase(photos);
+    setSelectedPhotoIds(pickPhotos(photos, 4).map(p => p.id));
 
-    const loadPhotos = () => {
-      try {
-        const raw = localStorage.getItem(`cruiseJournalEntries_${cruise.id}`);
-        if (!raw) return;
-        const entries = JSON.parse(raw);
-        const allPhotos = [];
-        entries.forEach(e => {
-          if (e.photos) e.photos.forEach(p => allPhotos.push({ id: p.id, date: e.date }));
-          if (e.activities) {
-            e.activities.forEach(a => {
-              if (a.photos) a.photos.forEach(p => allPhotos.push({ id: p.id, date: e.date }));
-            });
-          }
-        });
-        setPhotoDatabase(allPhotos);
-        
-        const tripIds = allPhotos.map(p => p.id);
-        setSelectedPhotoIds(tripIds.sort(() => 0.5 - Math.random()).slice(0, 4));
-        
-        const initialMainText = cruise.label || (cruise.homePort ? cruise.homePort.split(',')[0] : defaultShip);
-        setMainText(initialMainText.toUpperCase());
-      } catch (e) {
-        console.error("Error loading photos", e);
-      }
-    };
-    loadPhotos();
+    const initialMainText = cruise.label || (cruise.homePort ? cruise.homePort.split(',')[0] : defaultShip);
+    setMainText(initialMainText.toUpperCase());
+    // Runs once per cruise; later edits to the text fields must not be reset.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cruise?.id]);
 
   // 3. HANDLE FILTER CHANGE
@@ -133,35 +121,71 @@ export default function PostcardGenerator({ cruise, onClose }) {
 
   // 4. SHUFFLE LOGIC
   const shufflePhotos = (loc = selectedLocation) => {
-    let pool = [];
-    if (loc === 'trip') {
-      pool = photoDatabase.map(p => p.id);
-    } else {
-      pool = photoDatabase.filter(p => p.date === loc).map(p => p.id);
-    }
-    if (pool.length === 0) pool = photoDatabase.map(p => p.id); 
-    const shuffled = pool.sort(() => 0.5 - Math.random()).slice(0, 4);
-    setSelectedPhotoIds(shuffled);
+    let pool = loc === 'trip' ? photoDatabase : photoDatabase.filter(p => p.date === loc);
+    if (pool.length === 0) pool = photoDatabase;
+    const shuffled = [...pool].sort(() => 0.5 - Math.random()).slice(0, 4);
+    setSelectedPhotoIds(shuffled.map(p => p.id));
   };
 
-  // 5. DOWNLOAD LOGIC
-  const handleDownload = async () => {
+  // 5. SAVE / SHARE
+  // On phones the share sheet needs a fresh tap, so the image is made
+  // first and shared from a second button. Desktops download right away.
+  const [readyBlob, setReadyBlob] = useState(null);
+  const fileName = `postcard-${slugify(mainText, 'cruise')}.png`;
+
+  useEffect(() => {
+    setReadyBlob(null);
+  }, [layoutMode, overlayPosition, selectedPhotoIds, topText, mainText, bottomText]);
+
+  const shareBlob = async (blob) => {
+    try {
+      const result = await saveOrShareFile(blob, fileName, { title: mainText });
+      setStatus(result === 'cancelled' ? '' : 'Saved!');
+    } catch (error) {
+      console.error('Postcard share failed', error);
+      setStatus('Error');
+    }
+    setTimeout(() => setStatus(''), 2000);
+  };
+
+  const handleCreate = async () => {
     if (!postcardRef.current) return;
     setStatus('Generating...');
     try {
+      // Let photos finish painting before capture.
       await new Promise(r => setTimeout(r, 500));
-      const dataUrl = await htmlToImage.toPng(postcardRef.current, { quality: 1.0, pixelRatio: 2 });
-      const link = document.createElement('a');
-      link.download = `postcard-${mainText.replace(/\s+/g, '-').toLowerCase()}.png`;
-      link.href = dataUrl;
-      link.click();
-      setStatus('Saved!');
-      setTimeout(() => setStatus(''), 2000);
+      const blob = await htmlToImage.toBlob(postcardRef.current, { pixelRatio: 2 });
+      if (!blob) throw new Error('Postcard image was empty');
+
+      if (shareNeedsFreshTap()) {
+        setReadyBlob(blob);
+        setStatus('');
+      } else {
+        await shareBlob(blob);
+      }
     } catch (error) {
       console.error('Postcard save failed', error);
       setStatus('Error');
+      setTimeout(() => setStatus(''), 2000);
     }
   };
+
+  // Scale the fixed-size card down to fit small screens. The card itself
+  // stays 800x520, so the exported image is unaffected.
+  const previewBoxRef = useRef(null);
+  const [previewScale, setPreviewScale] = useState(1);
+  useLayoutEffect(() => {
+    const box = previewBoxRef.current;
+    if (!box || typeof ResizeObserver === 'undefined') return;
+    const fit = () => {
+      const available = box.clientWidth - 32;
+      setPreviewScale(Math.min(1, Math.max(0.2, available / CARD_W)));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(box);
+    return () => ro.disconnect();
+  }, []);
 
   // Positioning Logic
   const getOverlayPositionClasses = () => {
@@ -245,18 +269,27 @@ export default function PostcardGenerator({ cruise, onClose }) {
           </button>
 
           <div className="mt-auto space-y-3 pt-4">
-            <button onClick={handleDownload} disabled={!!status} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg">
-              {status === 'Generating...' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
-              {status || 'Download Image'}
-            </button>
+            {readyBlob ? (
+              <button onClick={() => shareBlob(readyBlob)} disabled={!!status} className="w-full flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg">
+                <Share2 className="w-5 h-5" />
+                {status || 'Save / Share Postcard'}
+              </button>
+            ) : (
+              <button onClick={handleCreate} disabled={!!status} className="w-full flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg">
+                {status === 'Generating...' ? <Loader2 className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
+                {status || 'Save Postcard'}
+              </button>
+            )}
             <button onClick={onClose} className="w-full text-slate-400 hover:text-white text-sm py-2">Close</button>
           </div>
         </div>
 
         {/* --- RIGHT: Preview --- */}
-        <div className="flex-1 bg-slate-950 p-8 flex items-center justify-center overflow-auto bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px]">
-          
-          <div ref={postcardRef} className="relative w-[800px] h-[520px] bg-white shadow-2xl shrink-0 flex flex-col overflow-hidden font-sans">
+        <div ref={previewBoxRef} className="flex-1 bg-slate-950 p-4 md:p-8 flex items-center justify-center overflow-hidden bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:20px_20px]">
+          {/* Outer box takes the scaled size; inner box scales the full-size card. */}
+          <div style={{ width: CARD_W * previewScale, height: CARD_H * previewScale }} className="shrink-0">
+          <div style={{ transform: `scale(${previewScale})`, transformOrigin: 'top left' }}>
+          <div ref={postcardRef} data-testid="postcard" className="relative w-[800px] h-[520px] bg-white shadow-2xl shrink-0 flex flex-col overflow-hidden font-sans">
             {/* 1. Photo Area (Top part) */}
             <div className="relative flex-1 w-full bg-slate-100 overflow-hidden">
                {/* --- PHOTO LAYOUT --- */}
@@ -291,7 +324,7 @@ export default function PostcardGenerator({ cruise, onClose }) {
             {/* 2. The Footer */}
             <div className="h-[100px] bg-white border-t border-slate-100 flex items-center justify-between px-8 relative z-10">
                <div className="text-slate-600 font-serif italic text-xl">
-                  Capture your cruise at <span className="font-bold text-blue-900 not-italic">MomentsAtSea.com</span>
+                  Capture your cruise at <span className="font-bold text-blue-900 not-italic">{SITE_LABEL}</span>
                </div>
                <div className="flex items-center gap-4">
                   <div className="text-right">
@@ -299,10 +332,12 @@ export default function PostcardGenerator({ cruise, onClose }) {
                     <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">FULL STORY</div>
                   </div>
                   <div className="bg-slate-900 p-1.5 rounded-lg">
-                     <QRCodeSVG value="https://momentsatsea.com" size={60} bgColor="#ffffff" fgColor="#000000" />
+                     <QRCodeSVG value={SITE_URL} size={60} bgColor="#ffffff" fgColor="#000000" />
                   </div>
                </div>
             </div>
+          </div>
+          </div>
           </div>
         </div>
       </div>

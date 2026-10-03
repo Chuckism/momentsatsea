@@ -2,6 +2,7 @@
 import { useRef, useState } from 'react';
 import { CLOUD_ENABLED } from '../../lib/supabaseClient';
 import { restoreLatestBackup } from '../../lib/backupSync';
+import { saveOrShareFile } from '../../lib/shareFile';
 
 /** Export / Import (local JSON) + optional “Restore from Cloud” (Supabase). */
 export default function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppState }) {
@@ -30,7 +31,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
     }
   }
 
-  const exportJSON = () => {
+  const exportJSON = async () => {
     try {
       const cruises = JSON.parse(localStorage.getItem('allCruises') || '[]');
       const entriesByCruiseId = {};
@@ -52,14 +53,9 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
       const yyyy = y.getFullYear();
       const mm = String(y.getMonth() + 1).padStart(2, '0');
       const dd = String(y.getDate()).padStart(2, '0');
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `momentsatsea-backup-${yyyy}${mm}${dd}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      // Revoking immediately can cancel the download in Safari.
-      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+      await saveOrShareFile(blob, `momentsatsea-backup-${yyyy}${mm}${dd}.json`, {
+        title: 'MomentsAtSea backup',
+      });
     } catch (e) {
       alert('Export failed. See console for details.');
       console.error(e);

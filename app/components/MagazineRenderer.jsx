@@ -1,7 +1,9 @@
 'use client';
 import { useMemo, useEffect, useState } from 'react';
 import { Ship, MapPin, Sun, X, Printer, Loader2, ChevronLeft, ChevronRight, Award } from 'lucide-react';
-import { getPhotoBlob } from '@/lib/photoStore';
+import { getDisplayBlob } from '@/lib/photoStore';
+import { collectCruisePhotos, favoritesFirst } from '@/lib/photoSelection';
+import { SITE_LABEL, APP_NAME } from '@/lib/brand';
 
 
 /* ==========================================
@@ -16,7 +18,7 @@ function MagazinePhoto({ id, className, caption, objectFit = "cover" }) {
     (async () => {
       try {
         if (!id) return;
-        const blob = await getPhotoBlob(id); 
+        const blob = await getDisplayBlob(id);
         if (active && blob) {
           objectUrl = URL.createObjectURL(blob);
           setUrl(objectUrl);
@@ -31,7 +33,7 @@ function MagazinePhoto({ id, className, caption, objectFit = "cover" }) {
   if (!id) return <div className={`bg-slate-100 ${className}`} />;
 
   return (
-    <div className={`relative overflow-hidden bg-slate-100 ${className}`}>
+    <div data-photo-id={id} className={`relative overflow-hidden bg-slate-100 ${className}`}>
       {url ? (
         <img src={url} className={`w-full h-full object-${objectFit}`} alt={caption || "Cruise memory"} />
       ) : (
@@ -88,17 +90,11 @@ export default function MagazineRenderer({ cruise, onClose }) {
     });
   }, [cruise.itinerary, entries]);
 
-  // Helper to get ALL photos for the cover collage
+  // All photos for the cover, favorites first so the cover opens on one.
   const allPhotoIds = useMemo(() => {
-    let ids = [];
-    Object.values(entries).forEach(e => {
-       if (e.photos) e.photos.forEach(p => ids.push(p.id));
-       if (e.activities) e.activities.forEach(a => {
-         if (a.photos) a.photos.forEach(p => ids.push(p.id));
-       });
-    });
-    return ids; 
-  }, [entries]);
+    const photos = collectCruisePhotos(Object.values(entries), cruise.itinerary || []);
+    return favoritesFirst(photos).map(p => p.id);
+  }, [entries, cruise.itinerary]);
 
   const nextCover = () => setCoverPhotoIndex(prev => (prev + 1) % allPhotoIds.length);
   const prevCover = () => setCoverPhotoIndex(prev => (prev - 1 + allPhotoIds.length) % allPhotoIds.length);
@@ -167,7 +163,7 @@ export default function MagazineRenderer({ cruise, onClose }) {
         <div id="magazine-content" className="flex flex-col items-center gap-8 print:gap-0 print:block">
 
           {/* === COVER PAGE === */}
-          <div className="w-[8.5in] h-[11in] bg-white relative shadow-2xl shrink-0 overflow-hidden print:shadow-none print:break-after-page group">
+          <div data-testid="magazine-cover" className="w-[8.5in] h-[11in] bg-white relative shadow-2xl shrink-0 overflow-hidden print:shadow-none print:break-after-page group">
              
              {/* Full Bleed Background Photo */}
              <div className="absolute inset-0 bg-slate-900">
@@ -219,7 +215,7 @@ export default function MagazineRenderer({ cruise, onClose }) {
                 
                 {/* Branding Footer */}
                 <div className="mt-6 text-[10px] uppercase tracking-widest text-white/50">
-                  Created with MomentsAtSea.com
+                  Created with {SITE_LABEL}
                 </div>
              </div>
           </div>
@@ -292,6 +288,8 @@ export default function MagazineRenderer({ cruise, onClose }) {
                        day.activities.forEach(a => {
                          if (a.photos) dayPhotos.push(...a.photos);
                        });
+                       // Favorites take the big slot and the first spots on the page.
+                       const ordered = favoritesFirst(dayPhotos);
                        
                        // PLATINUM LOGIC
                        if (dayPhotos.length === 0) {
@@ -311,7 +309,7 @@ export default function MagazineRenderer({ cruise, onClose }) {
                           );
                        }
 
-                       return dayPhotos.slice(0, 4).map((p, idx) => (
+                       return ordered.slice(0, 4).map((p, idx) => (
                          <MagazinePhoto 
                            key={p.id} 
                            id={p.id} 
@@ -325,7 +323,7 @@ export default function MagazineRenderer({ cruise, onClose }) {
               
               {/* Footer */}
               <div className="h-12 border-t border-slate-100 flex items-center justify-between px-10 text-[10px] text-slate-400 uppercase tracking-widest shrink-0">
-                 <span>Created with MomentsAtSea.com</span>
+                 <span>Created with {SITE_LABEL}</span>
                  <span>Page {i + 2}</span>
               </div>
 
@@ -339,8 +337,8 @@ export default function MagazineRenderer({ cruise, onClose }) {
                  <Ship className="w-8 h-8 text-white" />
                </div>
                <div className="text-white tracking-widest uppercase text-xs">Created with</div>
-               <div className="text-3xl font-bold text-white">MomentsAtSea</div>
-               <div className="text-slate-500 text-xs mt-8">momentsatsea.com</div>
+               <div className="text-3xl font-bold text-white">{APP_NAME}</div>
+               <div className="text-slate-500 text-xs mt-8">{SITE_LABEL}</div>
             </div>
           </div>
 

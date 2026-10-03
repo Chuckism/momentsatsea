@@ -8,6 +8,7 @@ import {
   Upload,
   X,
   Anchor,
+  Star,
 } from "lucide-react";
 
 import DayBanner from "@/app/components/DayBanner";
@@ -16,7 +17,7 @@ import DailyGuidance from "@/app/components/DailyGuidance";
 
 import {
   putPhoto,
-  getPhotoBlob,
+  getDisplayBlob,
   deletePhotoBlob,
 } from "./photoStore";
 
@@ -41,7 +42,7 @@ function PhotoImg({ id, className, alt }) {
 
     (async () => {
       try {
-        const blob = await getPhotoBlob(id);
+        const blob = await getDisplayBlob(id);
         if (cancelled || !blob) return;
         objectUrl = URL.createObjectURL(blob);
         setUrl(objectUrl);
@@ -65,6 +66,23 @@ function PhotoImg({ id, className, alt }) {
   }
 
   return <img src={url} alt={alt} className={className} loading="lazy" />;
+}
+
+function FavoriteButton({ active, onToggle }) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-pressed={active}
+      aria-label={active ? "Remove from favorites" : "Mark as favorite"}
+      title="Favorites are used first in keepsakes"
+      className={`absolute top-2 left-2 p-1.5 rounded-full ${
+        active ? "bg-amber-400 text-slate-900" : "bg-black/50 text-white"
+      }`}
+    >
+      <Star className="w-4 h-4" fill={active ? "currentColor" : "none"} />
+    </button>
+  );
 }
 
 /* ===================== Day Summary Compiler ===================== */
@@ -327,6 +345,14 @@ export default function DailyJournal({
     );
   };
 
+  const toggleFavorite = (photoId) => {
+    changeEntry(selectedDate, (prev) => ({
+      photos: (prev.photos || []).map((p) =>
+        p.id === photoId ? { ...p, favorite: !p.favorite } : p
+      ),
+    }));
+  };
+
   const deletePhoto = async (photoId) => {
     const date = selectedDate;
     await deletePhotoBlob(photoId);
@@ -504,6 +530,10 @@ export default function DailyJournal({
                   alt="Day photo"
                   className="w-full rounded-lg"
                 />
+                <FavoriteButton
+                  active={!!photo.favorite}
+                  onToggle={() => toggleFavorite(photo.id)}
+                />
                 <button
                   onClick={() => deletePhoto(photo.id)}
                   className="absolute top-2 right-2 bg-red-600 p-1 rounded-full"
@@ -591,6 +621,10 @@ export default function DailyJournal({
                       id={photo.id}
                       alt="Activity photo"
                       className="w-full rounded-lg"
+                    />
+                    <FavoriteButton
+                      active={!!photo.favorite}
+                      onToggle={() => toggleFavorite(photo.id)}
                     />
                     <button
                       onClick={() => deletePhoto(photo.id)}
