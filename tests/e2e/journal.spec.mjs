@@ -1,77 +1,16 @@
 // End-to-end checks for the offline journal: autosave, local storage,
 // deletes and the finished-cruise screen. Run with `npm run test:e2e`.
 
-import { test, expect } from '@playwright/test';
-
-const SHIP = 'Test Ship';
-
-// 1x1 PNG
-const PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
-  'base64'
-);
-
-/* ---------- Helpers ---------- */
-
-const readStorage = (page, key) =>
-  page.evaluate((k) => JSON.parse(localStorage.getItem(k) || 'null'), key);
-
-async function createCruise(page) {
-  await page.goto('/');
-  await page.getByRole('button', { name: /Start New Cruise/ }).click();
-  await page.getByPlaceholder('Ship name').fill(SHIP);
-  const dates = page.locator('input[type="date"]');
-  await dates.nth(0).fill('2026-10-02');
-  await dates.nth(1).fill('2026-10-05');
-  await page.getByRole('button', { name: 'Generate Itinerary' }).click();
-  await page.getByRole('button', { name: 'Begin Your Journal' }).click();
-  await expect(page.getByPlaceholder('Weather')).toBeVisible();
-
-  const [cruise] = await readStorage(page, 'allCruises');
-  return cruise.id;
-}
-
-// Reloading always lands on the cruise list.
-async function reopenCruise(page) {
-  await page.reload();
-  await page.getByRole('heading', { name: SHIP }).click();
-  await expect(page.getByPlaceholder('Weather')).toBeVisible();
-}
-
-// Wait for the debounced autosave to write a value.
-async function expectSaved(page, cruiseId, date, check) {
-  await expect
-    .poll(async () => {
-      const entries = (await readStorage(page, `cruiseJournalEntries_${cruiseId}`)) || [];
-      return check(entries.find((e) => e.date === date));
-    })
-    .toBe(true);
-}
-
-/* ---------- Fixtures ---------- */
-
-// Reset per test; tests in one worker run one at a time.
-let pageErrors = [];
-let dialogs = [];
-
-test.beforeEach(async ({ page }) => {
-  pageErrors = [];
-  dialogs = [];
-  page.on('pageerror', (e) => pageErrors.push(e.message));
-  page.on('console', (m) => {
-    if (m.type() === 'error') pageErrors.push(m.text());
-  });
-
-  // Accept confirm() prompts, but record them so tests can assert on them.
-  page.on('dialog', async (d) => {
-    dialogs.push(d.message());
-    await d.accept();
-  });
-});
-
-test.afterEach(() => {
-  expect(pageErrors, 'page errors').toEqual([]);
-});
+import {
+  test,
+  expect,
+  SHIP,
+  PNG,
+  readStorage,
+  createCruise,
+  reopenCruise,
+  expectSaved,
+} from './helpers.mjs';
 
 /* ---------- Tests ---------- */
 
@@ -141,7 +80,7 @@ test('backup queue keeps one snapshot per cruise and compacts old queues', async
   expect(queue.filter((q) => q.cruiseId === 'legacy')).toHaveLength(1);
 });
 
-test('deleting an activity asks first and stays deleted', async ({ page }) => {
+test('deleting an activity asks first and stays deleted', async ({ page, dialogs }) => {
   const cruiseId = await createCruise(page);
 
   await page.getByRole('button', { name: /Add Activity/ }).click();
