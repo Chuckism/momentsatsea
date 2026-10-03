@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Calendar,
   Plus,
@@ -114,76 +114,161 @@ function compileDaySummary(entry, day) {
 
 /* ===================== Component ===================== */
 
+// Typing autosaves after this pause, so each keystroke doesn't rewrite storage.
+const AUTOSAVE_DELAY_MS = 800;
+
+function blankEntry(date) {
+  return {
+    date,
+    weather: "",
+    notes: "",
+    summary: "",
+    photos: [],
+    activities: [],
+  };
+}
+
 export default function DailyJournal({
   cruiseDetails,
   onFinishCruise,
 }) {
   const itinerary = cruiseDetails.itinerary || [];
+  const cruiseId = cruiseDetails.id;
 
   const [selectedDate, setSelectedDate] = useState(
     itinerary[0]?.date || ""
   );
 
   const [entries, setEntries] = useState({});
-  const [savedEntries, setSavedEntries] = useState([]);
   const [showSuccess, setShowSuccess] = useState("");
+
+  // Refs mirror the latest entries so saves never read a stale render.
+  const entriesRef = useRef({});
+  const savedEntriesRef = useRef([]);
+  const dirtyDatesRef = useRef(new Set());
+  const autosaveTimerRef = useRef(null);
+
+  /* -------- Save -------- */
+
+  const persistDate = (date) => {
+    const entry = entriesRef.current[date];
+    if (!entry) return true;
+
+    const result = saveJournalEntry({
+      cruiseId,
+      entry: {
+        ...entry,
+        date,
+        dayInfo: itinerary.find((d) => d.date === date),
+        id:
+          savedEntriesRef.current.find((e) => e.date === date)?.id ||
+          Date.now(),
+        savedAt: new Date().toISOString(),
+      },
+      existingEntries: savedEntriesRef.current,
+    });
+
+    if (result.success) {
+      savedEntriesRef.current = result.entries;
+      dirtyDatesRef.current.delete(date);
+    }
+    return result.success;
+  };
+
+  const flushPending = () => {
+    clearTimeout(autosaveTimerRef.current);
+    autosaveTimerRef.current = null;
+    let ok = true;
+    for (const date of [...dirtyDatesRef.current]) {
+      ok = persistDate(date) && ok;
+    }
+    return ok;
+  };
+
+  // Keep the latest flush reachable from listeners and cleanup.
+  const flushRef = useRef(flushPending);
+  flushRef.current = flushPending;
+
+  /**
+   * Apply a change to one day's entry, built from the latest state.
+   * persist: "now" saves immediately, "debounced" waits for a typing pause.
+   */
+  const changeEntry = (date, makeChanges, persist = "now") => {
+    const prev = entriesRef.current[date] || blankEntry(date);
+    const next = { ...prev, ...makeChanges(prev) };
+    entriesRef.current = { ...entriesRef.current, [date]: next };
+    setEntries(entriesRef.current);
+    dirtyDatesRef.current.add(date);
+
+    if (persist === "now") {
+      flushPending();
+    } else {
+      clearTimeout(autosaveTimerRef.current);
+      autosaveTimerRef.current = setTimeout(
+        () => flushRef.current(),
+        AUTOSAVE_DELAY_MS
+      );
+    }
+  };
+
+  const updateField = (field, value) =>
+    changeEntry(selectedDate, () => ({ [field]: value }), "debounced");
+
+  const save = () => {
+    // Make sure the selected day is written even if nothing changed.
+    dirtyDatesRef.current.add(selectedDate);
+    if (!entriesRef.current[selectedDate]) {
+      entriesRef.current = {
+        ...entriesRef.current,
+        [selectedDate]: blankEntry(selectedDate),
+      };
+    }
+    if (flushPending()) {
+      setShowSuccess("saved");
+      setTimeout(() => setShowSuccess(""), 2500);
+    }
+  };
 
   /* -------- Load persisted entries -------- */
 
   useEffect(() => {
-    const loaded = loadJournalEntries(cruiseDetails.id);
+    const loaded = loadJournalEntries(cruiseId);
     const map = {};
     loaded.forEach((e) => (map[e.date] = e));
+    entriesRef.current = map;
+    savedEntriesRef.current = loaded;
+    dirtyDatesRef.current = new Set();
     setEntries(map);
-    setSavedEntries(loaded);
-  }, [cruiseDetails.id]);
+  }, [cruiseId]);
+
+  /* -------- Never lose pending text -------- */
+
+  useEffect(() => {
+    const onHide = () => {
+      if (document.visibilityState === "hidden") flushRef.current();
+    };
+    const onPageHide = () => flushRef.current();
+    document.addEventListener("visibilitychange", onHide);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      document.removeEventListener("visibilitychange", onHide);
+      window.removeEventListener("pagehide", onPageHide);
+      flushRef.current();
+    };
+  }, []);
 
   const currentDay = itinerary.find((d) => d.date === selectedDate);
+  const currentEntry = entries[selectedDate] || blankEntry(selectedDate);
 
-  const currentEntry =
-    entries[selectedDate] || {
-      date: selectedDate,
-      weather: "",
-      notes: "",
-      summary: "",
-      photos: [],
-      activities: [],
-    };
-
-  const updateEntry = (field, value) => {
-    setEntries((prev) => ({
-      ...prev,
-      [selectedDate]: { ...currentEntry, [field]: value },
-    }));
+  const goToDate = (date) => {
+    if (!date) return;
+    flushPending();
+    setSelectedDate(date);
   };
 
-  /* -------- Save -------- */
-
-  const save = (auto = false) => {
-    const entryToSave = {
-      ...currentEntry,
-      date: selectedDate,
-      dayInfo: currentDay,
-      id:
-        savedEntries.find((e) => e.date === selectedDate)?.id ||
-        Date.now(),
-      savedAt: new Date().toISOString(),
-    };
-
-    const result = saveJournalEntry({
-      cruiseId: cruiseDetails.id,
-      entry: entryToSave,
-      existingEntries: savedEntries,
-      autoSave: auto,
-    });
-
-    if (result.success) {
-      setSavedEntries(result.entries);
-      if (!auto) {
-        setShowSuccess("saved");
-        setTimeout(() => setShowSuccess(""), 2500);
-      }
-    }
+  const finishCruise = () => {
+    flushPending();
+    onFinishCruise();
   };
 
   /* -------- Generate Summary -------- */
@@ -196,14 +281,16 @@ export default function DailyJournal({
       if (!ok) return;
     }
 
-    const summary = compileDaySummary(currentEntry, currentDay);
-    updateEntry("summary", summary);
-    save(true);
+    changeEntry(selectedDate, (prev) => ({
+      summary: compileDaySummary(prev, currentDay),
+    }));
   };
 
   /* -------- Photos -------- */
 
   const handlePhotoUpload = async ({ files, activityId = null }) => {
+    // The user may switch days while photos are being stored.
+    const date = selectedDate;
     const out = [];
 
     for (const raw of files) {
@@ -212,7 +299,7 @@ export default function DailyJournal({
 
       await putPhoto({
         id,
-        cruiseId: cruiseDetails.id,
+        cruiseId,
         arrayBuffer: buf,
         type: raw.type,
         caption: "",
@@ -221,64 +308,89 @@ export default function DailyJournal({
       out.push({ id, caption: "", activityId });
     }
 
-    updateEntry("photos", [...(currentEntry.photos || []), ...out]);
-    save(true);
+    if (out.length) {
+      changeEntry(date, (prev) => ({
+        photos: [...(prev.photos || []), ...out],
+      }));
+    }
   };
 
   const updatePhotoCaption = (photoId, caption) => {
-    updateEntry(
-      "photos",
-      currentEntry.photos.map((p) =>
-        p.id === photoId ? { ...p, caption } : p
-      )
+    changeEntry(
+      selectedDate,
+      (prev) => ({
+        photos: (prev.photos || []).map((p) =>
+          p.id === photoId ? { ...p, caption } : p
+        ),
+      }),
+      "debounced"
     );
-    save(true);
   };
 
   const deletePhoto = async (photoId) => {
+    const date = selectedDate;
     await deletePhotoBlob(photoId);
-    updateEntry(
-      "photos",
-      currentEntry.photos.filter((p) => p.id !== photoId)
-    );
-    save(true);
+    changeEntry(date, (prev) => ({
+      photos: (prev.photos || []).filter((p) => p.id !== photoId),
+    }));
   };
 
   /* -------- Activities -------- */
 
   const addActivity = () => {
-    updateEntry("activities", [
-      ...(currentEntry.activities || []),
-      {
-        id: makeId(),
-        title: "",
-        description: "",
-        createdAt: Date.now(),
-      },
-    ]);
-    save(true);
+    changeEntry(selectedDate, (prev) => ({
+      activities: [
+        ...(prev.activities || []),
+        {
+          id: makeId(),
+          title: "",
+          description: "",
+          createdAt: Date.now(),
+        },
+      ],
+    }));
   };
 
   const updateActivity = (id, field, value) => {
-    updateEntry(
-      "activities",
-      currentEntry.activities.map((a) =>
-        a.id === id ? { ...a, [field]: value } : a
-      )
+    changeEntry(
+      selectedDate,
+      (prev) => ({
+        activities: (prev.activities || []).map((a) =>
+          a.id === id ? { ...a, [field]: value } : a
+        ),
+      }),
+      "debounced"
     );
-    save(true);
   };
 
   const deleteActivity = (id) => {
-    updateEntry(
-      "activities",
-      currentEntry.activities.filter((a) => a.id !== id)
+    const activity = (currentEntry.activities || []).find((a) => a.id === id);
+    const removedPhotos = (currentEntry.photos || []).filter(
+      (p) => p.activityId === id
     );
-    updateEntry(
-      "photos",
-      currentEntry.photos.filter((p) => p.activityId !== id)
-    );
-    save(true);
+
+    const hasContent =
+      removedPhotos.length ||
+      activity?.title?.trim() ||
+      activity?.description?.trim();
+    if (hasContent) {
+      const photoNote = removedPhotos.length
+        ? ` and its ${removedPhotos.length} photo${removedPhotos.length === 1 ? "" : "s"}`
+        : "";
+      if (!confirm(`Delete this activity${photoNote}? This can't be undone.`)) {
+        return;
+      }
+    }
+
+    changeEntry(selectedDate, (prev) => ({
+      activities: (prev.activities || []).filter((a) => a.id !== id),
+      photos: (prev.photos || []).filter((p) => p.activityId !== id),
+    }));
+
+    // The entry no longer references these, so free the stored images.
+    for (const p of removedPhotos) {
+      deletePhotoBlob(p.id).catch(() => {});
+    }
   };
 
   /* -------- Navigation -------- */
@@ -304,12 +416,12 @@ export default function DailyJournal({
 
       <select
         value={selectedDate}
-        onChange={(e) => setSelectedDate(e.target.value)}
+        onChange={(e) => goToDate(e.target.value)}
         className="w-full bg-slate-700 text-white rounded-lg p-3"
       >
         {itinerary.map((day) => (
           <option key={day.date} value={day.date}>
-            {new Date(day.date).toDateString()}
+            {new Date(`${day.date}T00:00:00`).toDateString()}
           </option>
         ))}
       </select>
@@ -322,7 +434,7 @@ export default function DailyJournal({
         className="w-full bg-slate-700 rounded-lg p-3 text-white"
         placeholder="Weather"
         value={currentEntry.weather}
-        onChange={(e) => updateEntry("weather", e.target.value)}
+        onChange={(e) => updateField("weather", e.target.value)}
       />
 
       <textarea
@@ -330,7 +442,7 @@ export default function DailyJournal({
         className="w-full bg-slate-700 rounded-lg p-3 text-white"
         placeholder="Notes"
         value={currentEntry.notes}
-        onChange={(e) => updateEntry("notes", e.target.value)}
+        onChange={(e) => updateField("notes", e.target.value)}
       />
 
 
@@ -355,7 +467,7 @@ export default function DailyJournal({
           className="w-full bg-slate-700 rounded-lg p-3 text-white"
           placeholder="Generate a summary to see a compiled recap of your day…"
           value={currentEntry.summary}
-          onChange={(e) => updateEntry("summary", e.target.value)}
+          onChange={(e) => updateField("summary", e.target.value)}
         />
       </div>
 
@@ -513,7 +625,7 @@ export default function DailyJournal({
         <button
           disabled={currentIndex === 0}
           onClick={() =>
-            setSelectedDate(itinerary[currentIndex - 1]?.date)
+            goToDate(itinerary[currentIndex - 1]?.date)
           }
           className="flex-1 bg-slate-700 text-white py-2 rounded-lg"
         >
@@ -523,7 +635,7 @@ export default function DailyJournal({
         <button
           disabled={currentIndex === itinerary.length - 1}
           onClick={() =>
-            setSelectedDate(itinerary[currentIndex + 1]?.date)
+            goToDate(itinerary[currentIndex + 1]?.date)
           }
           className="flex-1 bg-slate-700 text-white py-2 rounded-lg"
         >
@@ -533,7 +645,7 @@ export default function DailyJournal({
 
       <button
         type="button"
-        onClick={onFinishCruise}
+        onClick={finishCruise}
         className="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3 rounded-lg font-bold"
       >
         <Anchor className="inline mr-2" /> Finish Cruise

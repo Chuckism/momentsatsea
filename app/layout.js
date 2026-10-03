@@ -18,12 +18,15 @@ export const metadata = {
   title: "Moments At Sea",
   description: "Capture and preserve your maritime memories.",
   manifest: "/manifest.webmanifest",
-  themeColor: "#000000",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
     title: "Moments At Sea",
   },
+};
+
+export const viewport = {
+  themeColor: "#000000",
 };
 
 export default function RootLayout({ children }) {

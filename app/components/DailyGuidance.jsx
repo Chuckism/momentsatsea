@@ -4,12 +4,10 @@ import { useEffect, useState } from 'react';
 import { Sun, Sunset } from 'lucide-react';
 
 export default function DailyGuidance({ day }) {
-  if (!day) return null;
-
   const [shouldShow, setShouldShow] = useState(false);
   const [isMorning, setIsMorning] = useState(true);
 
-  const portName = (day.port || "").split(",")[0];
+  const portName = (day?.port || "").split(",")[0];
 
   // Determine time-of-day grouping
   const hour = new Date().getHours();
@@ -17,7 +15,7 @@ export default function DailyGuidance({ day }) {
   const isAfternoonTime = hour >= 12 && hour < 18;
 
   // Create a unique key per day so prompts only show once per morning and once per afternoon
-  const dateKey = `guidance_${day.date}`;
+  const dateKey = `guidance_${day?.date}`;
   const morningKey = `${dateKey}_morning`;
   const afternoonKey = `${dateKey}_afternoon`;
 
@@ -69,11 +67,13 @@ export default function DailyGuidance({ day }) {
     ],
   };
 
-  const morningList = morningPromptsByType[day.type] || [];
-  const afternoonList = afternoonPromptsByType[day.type] || [];
+  const morningList = morningPromptsByType[day?.type] || [];
+  const afternoonList = afternoonPromptsByType[day?.type] || [];
 
   // Determine whether to show today’s prompt
   useEffect(() => {
+    if (!day?.date) return;
+
     if (isMorningTime) {
       if (!localStorage.getItem(morningKey)) {
         setShouldShow(true);
@@ -87,9 +87,9 @@ export default function DailyGuidance({ day }) {
         localStorage.setItem(afternoonKey, "shown");
       }
     }
-  }, [day.date, morningKey, afternoonKey, isMorningTime, isAfternoonTime]);
+  }, [day?.date, morningKey, afternoonKey, isMorningTime, isAfternoonTime]);
 
-  if (!shouldShow) return null;
+  if (!day || !shouldShow) return null;
 
   // TITLE LOGIC — updated per your request
   const title = isMorning

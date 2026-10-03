@@ -23,6 +23,11 @@ import OrderSheet from './components/OrderSheet';
 import BackupRestore from './components/BackupRestore';
 import AuthSheet from './components/AuthSheet';
 
+import { CLOUD_ENABLED } from '../lib/supabaseClient';
+import { dropQueuedBackups } from '../lib/backupSync';
+import { deleteJournalEntries } from './features/journal/journalStorage';
+import { deleteAllPhotosForCruise } from './features/journal/photoStore';
+
 
 /* =========================
    Helpers
@@ -88,6 +93,7 @@ function CruisesLibrary({
 
       {isCruiseFinished(cruise) && (
         <div className="mt-4 flex flex-wrap gap-2">
+          {CLOUD_ENABLED && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -97,7 +103,9 @@ function CruisesLibrary({
           >
             <Cloud className="w-4 h-4" /> Sync
           </button>
+          )}
 
+          {CLOUD_ENABLED && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -107,6 +115,7 @@ function CruisesLibrary({
           >
             Create Keepsakes
           </button>
+          )}
 
           <button
             onClick={(e) => {
@@ -236,6 +245,26 @@ export default function HomePageClient() {
     setAppState('cruises-list');
   };
 
+  const handleDeleteCruise = async (id) => {
+    const cruise = allCruises.find((c) => c.id === id);
+    const name = cruise?.ship || cruise?.label || 'this cruise';
+    const ok = confirm(
+      `Delete ${name} with all its journal entries and photos? This can't be undone.`
+    );
+    if (!ok) return;
+
+    const updated = allCruises.filter((c) => c.id !== id);
+    setAllCruises(updated);
+    localStorage.setItem('allCruises', JSON.stringify(updated));
+    deleteJournalEntries(id);
+    dropQueuedBackups(id);
+    try {
+      await deleteAllPhotosForCruise(id);
+    } catch (err) {
+      console.warn('[Cruises] Failed to delete photos for cruise', id, err);
+    }
+  };
+
   return (
     <AuthGate>
       <main className="min-h-screen bg-slate-900 text-white p-6">
@@ -251,15 +280,17 @@ export default function HomePageClient() {
               }
             }}
             onStartNew={handleStartNewCruise}
-            onDeleteCruise={(id) =>
-              setAllCruises(allCruises.filter((c) => c.id !== id))
-            }
+            onDeleteCruise={handleDeleteCruise}
             onOpenOrder={setOrderCruise}
             onPreview={setPreviewCruise}
             onPostcard={setPostcardCruise}
             onVideo={setVideoCruise}
             onSync={setSyncCruise}
           />
+        )}
+
+        {appState === 'cruises-list' && (
+          <BackupRestore allCruises={allCruises} setAllCruises={setAllCruises} />
         )}
 
         {appState === 'setup' && (

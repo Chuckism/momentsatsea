@@ -15,13 +15,15 @@ function PostcardPhoto({ id, className }) {
 
   useEffect(() => {
     let active = true;
+    let objectUrl = null;
     const load = async () => {
       try {
         if (!id) return;
         setLoading(true);
         const blob = await getPhotoBlob(id);
         if (active && blob) {
-          setUrl(URL.createObjectURL(blob));
+          objectUrl = URL.createObjectURL(blob);
+          setUrl(objectUrl);
         }
       } catch (e) {
         console.error("Failed to load photo", id);
@@ -30,7 +32,7 @@ function PostcardPhoto({ id, className }) {
       }
     };
     load();
-    return () => { active = false; if(url) URL.revokeObjectURL(url); };
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [id]);
 
   if (loading) {
@@ -67,7 +69,7 @@ export default function PostcardGenerator({ cruise, onClose }) {
 
   // Text State
   const defaultShip = cruise?.ship || "Our Voyage";
-  const defaultYear = cruise?.departureDate ? new Date(cruise.departureDate).getFullYear() : new Date().getFullYear();
+  const defaultYear = cruise?.departureDate ? new Date(`${cruise.departureDate}T00:00:00`).getFullYear() : new Date().getFullYear();
 
   const [topText, setTopText] = useState("GREETINGS FROM");
   const [mainText, setMainText] = useState(defaultShip.toUpperCase()); 

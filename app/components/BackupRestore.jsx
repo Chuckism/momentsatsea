@@ -1,13 +1,13 @@
 'use client';
 import { useRef, useState } from 'react';
-import { supabase } from '../../lib/supabaseClient';
+import { CLOUD_ENABLED } from '../../lib/supabaseClient';
 import { restoreLatestBackup } from '../../lib/backupSync';
 
 /** Export / Import (local JSON) + optional “Restore from Cloud” (Supabase). */
 export default function BackupRestore({ allCruises, setAllCruises, setActiveCruiseId, setAppState }) {
   const [busy, setBusy] = useState(false);
   const fileRef = useRef(null);
-  const hasCloud = !!supabase;
+  const hasCloud = CLOUD_ENABLED;
 
   // Choose a cruise to restore into (prefers active, then stored active id, then single/first)
   function chooseCruiseIdForRestore() {
@@ -57,8 +57,9 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
       a.download = `momentsatsea-backup-${yyyy}${mm}${dd}.json`;
       document.body.appendChild(a);
       a.click();
-      URL.revokeObjectURL(a.href);
       a.remove();
+      // Revoking immediately can cancel the download in Safari.
+      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
     } catch (e) {
       alert('Export failed. See console for details.');
       console.error(e);
@@ -100,7 +101,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
         setAppState?.('journaling');
       }
 
-      alert('Import complete! (Photos are not included; use Export Photos for those.)');
+      alert('Import complete! Photos are not included in backups.');
     } catch (e) {
       alert('Import failed. See console for details.');
       console.error(e);
@@ -111,7 +112,7 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
   };
 
   const handleRestoreFromCloud = async () => {
-    if (!supabase) {
+    if (!hasCloud) {
       alert('Cloud backup not configured.');
       return;
     }
@@ -200,7 +201,6 @@ export default function BackupRestore({ allCruises, setAllCruises, setActiveCrui
 
       <div className="text-xs text-slate-500 mt-2">
         Backups include your journal text and photo captions. Photos are stored on your device and are not in this backup.
-        To copy photos too, use <strong>Export Photos (.zip)</strong> below.
       </div>
     </div>
   );

@@ -12,16 +12,20 @@ function MagazinePhoto({ id, className, caption, objectFit = "cover" }) {
   
   useEffect(() => {
     let active = true;
+    let objectUrl = null;
     (async () => {
       try {
         if (!id) return;
         const blob = await getPhotoBlob(id); 
-        if (active && blob) setUrl(URL.createObjectURL(blob));
+        if (active && blob) {
+          objectUrl = URL.createObjectURL(blob);
+          setUrl(objectUrl);
+        }
       } catch (e) {
         console.error("Failed to load photo", id);
       }
     })();
-    return () => { active = false; if(url) URL.revokeObjectURL(url); };
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [id]);
 
   if (!id) return <div className={`bg-slate-100 ${className}`} />;
@@ -75,7 +79,8 @@ export default function MagazineRenderer({ cruise, onClose }) {
       return {
         ...day,
         weather: entry?.weather || '',
-        summary: entry?.summary || '',
+        // Days with notes but no generated summary still get their text printed.
+        summary: entry?.summary || entry?.notes || '',
         exceptionalFood: entry?.exceptionalFood || '',
         activities: entry?.activities || [],
         photos: entry?.photos || [],
@@ -239,9 +244,11 @@ export default function MagazineRenderer({ cruise, onClose }) {
                     </div>
                  </div>
                  <div className="text-right">
-                    <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
-                      <Sun className="w-4 h-4 text-yellow-500" /> {day.weather || 'Sunny'}
-                    </div>
+                    {day.weather && (
+                      <div className="flex items-center gap-2 text-slate-500 text-sm font-medium">
+                        <Sun className="w-4 h-4 text-yellow-500" /> {day.weather}
+                      </div>
+                    )}
                  </div>
               </div>
 

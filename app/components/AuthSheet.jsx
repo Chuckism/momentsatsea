@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { X, Mail, LogOut, CloudDownload, User } from 'lucide-react';
-import { supabase } from '../../lib/supabaseClient';
+import { supabase, CLOUD_ENABLED } from '../../lib/supabaseClient';
 import { restoreLatestBackup } from '../../lib/backupSync';
 import { ensureFamily } from '../../lib/familyLink';
 
@@ -13,7 +13,7 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
 
   // Load current user and react to auth changes
   useEffect(() => {
-    if (!supabase) return;
+    if (!supabase || !CLOUD_ENABLED) return;
     let subscription;
 
     (async () => {
@@ -72,7 +72,7 @@ export default function AuthSheet({ open, onClose, onSignedIn }) {
   if (!open) return null;
 
   const sendMagic = async () => {
-    if (!supabase) {
+    if (!supabase || !CLOUD_ENABLED) {
       setStatus('Supabase is not configured.');
       return;
     }

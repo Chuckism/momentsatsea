@@ -44,10 +44,7 @@ export default function OrderSheet({ open, onClose, cruise }) {
     if (!open) { setStatus('idle'); setSelected('bundle_masterpiece'); setRemoveWM(false); }
   }, [open]);
 
-  if (!open) return null;
-
   // --- cruise summary (header chips) ---
-  const portName = cruise?.homePort?.split(',')[0] || 'Cruise';
   const dateRange = useMemo(() => {
     if (!cruise?.departureDate || !cruise?.returnDate) return 'Dates not set';
     const start = new Date(cruise.departureDate + 'T00:00:00');
@@ -58,6 +55,9 @@ export default function OrderSheet({ open, onClose, cruise }) {
     return `${s} – ${e}`;
   }, [cruise?.departureDate, cruise?.returnDate]);
 
+  if (!open) return null;
+
+  const portName = cruise?.homePort?.split(',')[0] || 'Cruise';
   const chosen = PACKAGES.find(p => p.id === selected);
   const subtotal = chosen.price;
   const wmAddon = removeWM ? (selected === 'bundle_masterpiece' ? 2000 : 1000) : 0;
