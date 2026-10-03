@@ -7,13 +7,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:unit": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test \"tests/unit/**/*.test.mjs\"",
+    "test": "npm run test:unit && npm run test:e2e"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
     "@capacitor/cli": "^8.5.2",
     "@capacitor/core": "^8.5.2",
+    "@capacitor/filesystem": "^8.1.4",
     "@capacitor/ios": "^8.5.2",
+    "@capacitor/share": "^8.0.3",
     "@supabase/supabase-js": "^2.75.1",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.546.0",
