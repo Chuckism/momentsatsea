@@ -22,6 +22,8 @@ export default defineConfig({
     command: `npx next build && npx serve out -l ${PORT} --no-clipboard`,
     url: `http://localhost:${PORT}`,
     timeout: 300_000,
-    reuseExistingServer: !process.env.CI,
+    // Never test against whatever else is on the port: a stale build, or a
+    // server that shuts down mid-run, gives misleading failures.
+    reuseExistingServer: false,
   },
 });

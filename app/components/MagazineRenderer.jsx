@@ -2,7 +2,7 @@
 import { useMemo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Ship, Sun, X, Printer, Loader2, ChevronLeft, ChevronRight, Award, FileDown, Share2 } from 'lucide-react';
 import { getDisplayBlob } from '@/lib/photoStore';
-import { collectCruisePhotos, favoritesFirst } from '@/lib/photoSelection';
+import { collectCruisePhotos, favoritesFirst, pickPhotos } from '@/lib/photoSelection';
 import { SITE_LABEL, APP_NAME } from '@/lib/brand';
 import { buildMagazinePdf, PAGE_W_PX, PAGE_H_PX } from '@/lib/magazinePdf';
 import { saveOrShareFile, shareNeedsFreshTap, slugify } from '@/lib/shareFile';
@@ -13,6 +13,7 @@ import { saveOrShareFile, shareNeedsFreshTap, slugify } from '@/lib/shareFile';
    ========================================== */
 function MagazinePhoto({ id, className, caption, objectFit = "cover" }) {
   const [url, setUrl] = useState(null);
+  const fitClass = objectFit === "contain" ? "object-contain" : "object-cover";
   
   useEffect(() => {
     let active = true;
@@ -37,7 +38,7 @@ function MagazinePhoto({ id, className, caption, objectFit = "cover" }) {
   return (
     <div data-photo-id={id} className={`relative overflow-hidden bg-slate-100 ${className}`}>
       {url ? (
-        <img src={url} className={`w-full h-full object-${objectFit}`} alt={caption || "Cruise memory"} />
+        <img src={url} className={`w-full h-full ${fitClass}`} alt={caption || "Cruise memory"} />
       ) : (
         <div data-photo-loading className="flex items-center justify-center w-full h-full text-slate-300">
            <Loader2 className="w-6 h-6 animate-spin" />
@@ -68,6 +69,71 @@ function PageFrame({ scale, children }) {
         style={{ transform: `scale(${scale})`, transformOrigin: 'top left' }}
       >
         {children}
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================
+   PAGE PLAN
+   ========================================== */
+// The day page holds 4 photos; busy days continue on photo pages. Days
+// are capped so a long cruise doesn't turn into a phone book: favorites
+// first, then the rest spread across the day.
+const FIRST_PAGE_PHOTOS = 4;
+const PHOTOS_PER_EXTRA_PAGE = 6;
+const MAX_DAY_PHOTOS = 16;
+
+function dayTitle(day) {
+  if (day.type === 'port') return day.port?.split(',')[0] || 'Port Day';
+  if (day.type === 'sea') return 'Day at Sea';
+  if (day.type === 'embarkation') return 'Embarkation';
+  return 'Disembarkation';
+}
+
+function planDayPhotos(day) {
+  const all = [...day.photos];
+  day.activities.forEach(a => {
+    if (a.photos) all.push(...a.photos);
+  });
+  const withDate = all.map(p => ({ ...p, date: day.date }));
+  const kept = withDate.length > MAX_DAY_PHOTOS ? pickPhotos(withDate, MAX_DAY_PHOTOS) : withDate;
+  // Favorites take the big slot and the first spots on the page.
+  return favoritesFirst(kept);
+}
+
+/* ==========================================
+   PHOTO PAGE (a day's extra photos)
+   ========================================== */
+function PhotoPage({ pageRef, day, dayNumber, photos, pageNumber }) {
+  return (
+    <div ref={pageRef} data-testid="photo-page" className="w-[8.5in] h-[11in] bg-white relative shadow-2xl shrink-0 print:shadow-none print:break-after-page flex flex-col overflow-hidden">
+      <div className="h-16 flex items-baseline gap-4 px-10 pt-6 border-b border-slate-200 shrink-0">
+        <span className="text-xs uppercase tracking-widest text-slate-400 font-bold">Day {dayNumber}</span>
+        <span className="font-serif text-xl font-bold text-slate-900">{dayTitle(day)}</span>
+      </div>
+      {/* Whole photos on a light mat, so portraits aren't cropped. */}
+      {/* Rows match the photo count so the page is always filled; a lone
+          last photo spans both columns. */}
+      <div
+        className="flex-1 min-h-0 p-10 grid grid-cols-2 gap-5"
+        style={{ gridTemplateRows: `repeat(${Math.ceil(photos.length / 2)}, minmax(0, 1fr))` }}
+      >
+        {photos.map((p, idx) => (
+          <MagazinePhoto
+            key={p.id}
+            id={p.id}
+            caption={p.caption}
+            objectFit="contain"
+            className={`w-full h-full min-h-0 rounded-lg bg-slate-50 ${
+              idx === photos.length - 1 && photos.length % 2 === 1 ? 'col-span-2' : ''
+            }`}
+          />
+        ))}
+      </div>
+      <div className="h-12 border-t border-slate-100 flex items-center justify-between px-10 text-[10px] text-slate-400 uppercase tracking-widest shrink-0">
+        <span>Created with {SITE_LABEL}</span>
+        <span>Page {pageNumber}</span>
       </div>
     </div>
   );
@@ -110,8 +176,21 @@ export default function MagazineRenderer({ cruise, onClose }) {
         activities: entry?.activities || [],
         photos: entry?.photos || [],
       };
-    });
+    }).map(day => ({ ...day, orderedPhotos: planDayPhotos(day) }));
   }, [cruise.itinerary, entries]);
+
+  // Every page between the covers, in order.
+  const dayPages = useMemo(() => {
+    const pages = [];
+    sortedDays.forEach((day, dayIndex) => {
+      pages.push({ kind: 'day', day, dayIndex });
+      const extra = day.orderedPhotos.slice(FIRST_PAGE_PHOTOS);
+      for (let k = 0; k < extra.length; k += PHOTOS_PER_EXTRA_PAGE) {
+        pages.push({ kind: 'photos', day, dayIndex, photos: extra.slice(k, k + PHOTOS_PER_EXTRA_PAGE) });
+      }
+    });
+    return pages;
+  }, [sortedDays]);
 
   // All photos for the cover, favorites first so the cover opens on one.
   const allPhotoIds = useMemo(() => {
@@ -185,7 +264,7 @@ export default function MagazineRenderer({ cruise, onClose }) {
   const handleSavePdf = async () => {
     if (busy) return;
     try {
-      const pages = pageRefs.current.slice(0, sortedDays.length + 2).filter(Boolean);
+      const pages = pageRefs.current.slice(0, dayPages.length + 2).filter(Boolean);
       const blob = await buildMagazinePdf(pages, {
         title: `${shipTitle} magazine`,
         onProgress: (done, total) =>
@@ -330,9 +409,25 @@ export default function MagazineRenderer({ cruise, onClose }) {
           </PageFrame>
 
           {/* === DAILY PAGES === */}
-          {sortedDays.map((day, i) => (
-            <PageFrame key={i} scale={scale}>
-            <div ref={registerPage(i + 1)} className="w-[8.5in] h-[11in] bg-white relative shadow-2xl shrink-0 print:shadow-none print:break-after-page flex flex-col overflow-hidden">
+          {dayPages.map((pg, n) => {
+            const day = pg.day;
+            const i = pg.dayIndex;
+            if (pg.kind === 'photos') {
+              return (
+                <PageFrame key={`photos-${n}`} scale={scale}>
+                  <PhotoPage
+                    pageRef={registerPage(n + 1)}
+                    day={day}
+                    dayNumber={i + 1}
+                    photos={pg.photos}
+                    pageNumber={n + 2}
+                  />
+                </PageFrame>
+              );
+            }
+            return (
+            <PageFrame key={`day-${n}`} scale={scale}>
+            <div ref={registerPage(n + 1)} className="w-[8.5in] h-[11in] bg-white relative shadow-2xl shrink-0 print:shadow-none print:break-after-page flex flex-col overflow-hidden">
               
               {/* Header */}
               <div className="h-24 bg-slate-100 flex items-center justify-between px-10 border-b border-slate-200 shrink-0">
@@ -345,7 +440,7 @@ export default function MagazineRenderer({ cruise, onClose }) {
                         {new Date(day.date + 'T12:00:00').toLocaleDateString(undefined, {weekday:'long'})}
                       </div>
                       <div className="text-2xl font-serif font-bold text-slate-900 leading-none">
-                        {day.type === 'port' ? day.port?.split(',')[0] : day.type === 'sea' ? 'Day at Sea' : day.type === 'embarkation' ? 'Embarkation' : 'Disembarkation'}
+                        {dayTitle(day)}
                       </div>
                     </div>
                  </div>
@@ -398,15 +493,10 @@ export default function MagazineRenderer({ cruise, onClose }) {
                  {/* Right Col: Photos */}
                  <div className="col-span-7 grid grid-cols-2 gap-4 auto-rows-min content-start">
                     {(() => {
-                       const dayPhotos = [...day.photos];
-                       day.activities.forEach(a => {
-                         if (a.photos) dayPhotos.push(...a.photos);
-                       });
-                       // Favorites take the big slot and the first spots on the page.
-                       const ordered = favoritesFirst(dayPhotos);
-                       
+                       const ordered = day.orderedPhotos;
+
                        // PLATINUM LOGIC
-                       if (dayPhotos.length === 0) {
+                       if (ordered.length === 0) {
                           if (i === sortedDays.length - 1) {
                              return (
                                <div className="col-span-2 aspect-[3/4] bg-gradient-to-br from-slate-800 to-slate-900 flex flex-col items-center justify-center border border-slate-700 rounded-xl text-center p-6 shadow-inner">
@@ -423,7 +513,7 @@ export default function MagazineRenderer({ cruise, onClose }) {
                           );
                        }
 
-                       return ordered.slice(0, 4).map((p, idx) => (
+                       return ordered.slice(0, FIRST_PAGE_PHOTOS).map((p, idx) => (
                          <MagazinePhoto 
                            key={p.id} 
                            id={p.id} 
@@ -438,16 +528,17 @@ export default function MagazineRenderer({ cruise, onClose }) {
               {/* Footer */}
               <div className="h-12 border-t border-slate-100 flex items-center justify-between px-10 text-[10px] text-slate-400 uppercase tracking-widest shrink-0">
                  <span>Created with {SITE_LABEL}</span>
-                 <span>Page {i + 2}</span>
+                 <span>Page {n + 2}</span>
               </div>
 
             </div>
             </PageFrame>
-          ))}
+            );
+          })}
           
           {/* === BACK COVER === */}
           <PageFrame scale={scale}>
-          <div ref={registerPage(sortedDays.length + 1)} className="w-[8.5in] h-[11in] bg-slate-900 relative shadow-2xl shrink-0 flex items-center justify-center print:shadow-none print:break-after-page">
+          <div ref={registerPage(dayPages.length + 1)} className="w-[8.5in] h-[11in] bg-slate-900 relative shadow-2xl shrink-0 flex items-center justify-center print:shadow-none print:break-after-page">
             <div className="text-center space-y-4">
                <div className="w-16 h-16 bg-white/10 rounded-full flex items-center justify-center mx-auto">
                  <Ship className="w-8 h-8 text-white" />
